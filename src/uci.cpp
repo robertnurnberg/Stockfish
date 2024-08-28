@@ -385,9 +385,7 @@ int UCIEngine::to_cp(Value v, const Position& pos) {
     // (log(1/L - 1) - log(1/W - 1)) / (log(1/L - 1) + log(1/W - 1)).
     // Based on our win_rate_model, this simply yields v / a.
 
-    auto [a, b] = win_rate_params(pos);
-
-    return std::round(100 * int(v) / a);
+    return pos.game_ply() * 100000;
 }
 
 std::string UCIEngine::wdl(Value v, const Position& pos) {
