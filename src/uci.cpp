@@ -450,17 +450,19 @@ void UCIEngine::on_update_no_moves(const Engine::InfoShort& info) {
 void UCIEngine::on_update_full(const Engine::InfoFull& info, bool showWDL) {
     std::stringstream ss;
 
+    std::string score = format_score(info.score);
+    if (score.find("mate") != std::string::npos)
+    {
+        score += " upperbound";
+    }
     ss << "info";
-    ss << " depth " << info.depth                 //
-       << " seldepth " << info.selDepth           //
-       << " multipv " << info.multiPV             //
-       << " score " << format_score(info.score);  //
+    ss << " depth " << info.depth        //
+       << " seldepth " << info.selDepth  //
+       << " multipv " << info.multiPV    //
+       << " score " << score;            //
 
     if (showWDL)
         ss << " wdl " << info.wdl;
-
-    if (!info.bound.empty())
-        ss << " " << info.bound;
 
     ss << " nodes " << info.nodes        //
        << " nps " << info.nps            //
