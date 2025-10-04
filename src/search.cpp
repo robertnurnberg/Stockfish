@@ -59,6 +59,11 @@ void syzygy_extend_pv(const OptionsMap&            options,
                       Stockfish::Search::RootMove& rootMove,
                       Value&                       v);
 
+void prime_tt_with_pv(Stockfish::Position&         pos,
+                      TranspositionTable&          tt,
+                      const Stockfish::Search::RootMove& rootMove,
+                      Depth depth);
+
 using namespace Search;
 
 namespace {
@@ -1938,6 +1943,50 @@ void SearchManager::check_time(Search::Worker& worker) {
         worker.threads.stop = worker.threads.abortedSearch = true;
 }
 
+// Used to boost the TT depth of each position along a proven PV.
+void prime_tt_with_pv(Position&           pos,
+                      TranspositionTable& tt,
+                      const RootMove&     rootMove,
+                      Depth               depth) {
+
+    if (rootMove.pv.empty())
+        return;
+
+    const Depth boostedDepth = std::min(depth + 6, MAX_PLY - 1);
+
+    std::list<StateInfo> sts;
+
+    for (size_t ply = 0; ply <= rootMove.pv.size(); ++ply)
+    {
+        const Key   posKey  = pos.key();
+        const Value ttValue = value_to_tt(rootMove.score, ply);
+
+        const Move bestMove = (ply < rootMove.pv.size()) ? rootMove.pv[ply] : Move::none();
+
+        auto [ttHit, ttData, ttWriter] = tt.probe(posKey);
+
+        ttWriter.write(posKey,
+                       ttValue,
+                       true,
+                       BOUND_EXACT,
+                       boostedDepth,
+                       bestMove,
+                       VALUE_NONE,
+                       tt.generation());
+
+        if (bestMove != Move::none())
+        {
+            auto& st = sts.emplace_back();
+            pos.do_move(bestMove, st, &tt);
+        }
+    }
+
+    for (auto it = rootMove.pv.rbegin(); it != rootMove.pv.rend(); ++it)
+    {
+        pos.undo_move(*it);
+    }
+}
+
 // Used to correct and extend PVs for moves that have a TB (but not a mate) score.
 // Keeps the search based PV for as long as it is verified to maintain the game
 // outcome, truncates afterwards. Finally, extends to mate the PV, providing a
@@ -2074,10 +2123,10 @@ void syzygy_extend_pv(const OptionsMap&         options,
           << sync_endl;
 }
 
-void SearchManager::pv(Search::Worker&           worker,
-                       const ThreadPool&         threads,
-                       const TranspositionTable& tt,
-                       Depth                     depth) {
+void SearchManager::pv(Search::Worker&     worker,
+                       const ThreadPool&   threads,
+                       TranspositionTable& tt,
+                       Depth               depth) {
 
     const auto nodes     = threads.nodes_searched();
     auto&      rootMoves = worker.rootMoves;
@@ -2103,6 +2152,10 @@ void SearchManager::pv(Search::Worker&           worker,
         v       = tb ? rootMoves[i].tbScore : v;
 
         bool isExact = i != pvIdx || tb || !updated;  // tablebase- and previous-scores are exact
+
+        // Prime the TT with the PV to help subsequent searches
+        if (is_decisive(v) && ((!rootMoves[i].scoreLowerbound && !rootMoves[i].scoreUpperbound) || isExact))
+             prime_tt_with_pv(pos, tt, rootMoves[i], depth);
 
         // Potentially correct and extend the PV, and in exceptional cases v
         if (is_decisive(v) && std::abs(v) < VALUE_MATE_IN_MAX_PLY
