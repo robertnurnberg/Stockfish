@@ -421,6 +421,12 @@ void Search::Worker::iterative_deepening() {
             // Sort the PV lines searched so far and update the GUI
             std::stable_sort(rootMoves.begin() + pvFirst, rootMoves.begin() + pvIdx + 1);
 
+            if (threads.abortedSearch && is_loss(rootMoves[0].uciScore))
+            {
+                std::cout << "info string you bet... case 1 " << rootMoves[0].uciScore << " "
+                          << rootMoves[0].score << std::endl;
+            }
+
             if (mainThread
                 && (threads.stop || pvIdx + 1 == multiPV || nodes > 10000000)
                 // A thread that aborted search can have mated-in/TB-loss PV and
@@ -446,6 +452,8 @@ void Search::Worker::iterative_deepening() {
             // Bring the last best move to the front for best thread selection.
             Utility::move_to_front(rootMoves, [&lastBestPV = std::as_const(lastBestPV)](
                                                 const auto& rm) { return rm == lastBestPV[0]; });
+            std::cout << "info string you bet... case 2 " << rootMoves[0].score << " and also "
+                      << UCIEngine::move(lastBestPV[0], rootPos.is_chess960()) << std::endl;
             rootMoves[0].pv    = lastBestPV;
             rootMoves[0].score = rootMoves[0].uciScore = lastBestScore;
         }
@@ -454,6 +462,10 @@ void Search::Worker::iterative_deepening() {
             lastBestPV        = rootMoves[0].pv;
             lastBestScore     = rootMoves[0].score;
             lastBestMoveDepth = rootDepth;
+
+            std::cout << "info string you bet... case 3 " << rootMoves[0].score << " and also "
+                      << UCIEngine::move(lastBestPV[0], rootPos.is_chess960()) << std::endl;
+            rootMoves[0].pv = lastBestPV;
         }
 
         if (!mainThread)
