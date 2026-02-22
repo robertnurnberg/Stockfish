@@ -424,7 +424,9 @@ void Search::Worker::iterative_deepening() {
             if (threads.abortedSearch && is_loss(rootMoves[0].uciScore))
             {
                 std::cout << "info string you bet... case 1 " << rootMoves[0].uciScore << " "
-                          << rootMoves[0].score << std::endl;
+                          << rootMoves[0].score << " move is "
+                          << UCIEngine::move(rootMoves[0].pv[0], rootPos.is_chess960())
+                          << std::endl;
             }
 
             if (mainThread
@@ -465,7 +467,6 @@ void Search::Worker::iterative_deepening() {
 
             std::cout << "info string you bet... case 3 " << rootMoves[0].score << " and also "
                       << UCIEngine::move(lastBestPV[0], rootPos.is_chess960()) << std::endl;
-            rootMoves[0].pv = lastBestPV;
         }
 
         if (!mainThread)
