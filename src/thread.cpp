@@ -396,8 +396,8 @@ Thread* ThreadPool::get_best_thread() const {
         }
         else if (bestThreadInProvenLoss)
         {
-            // Make sure we pick the shortest mated / TB conversion
-            if (newThreadInProvenLoss && newThreadScore < bestThreadScore)
+            // Make sure we pick the longest mated / TB conversion (best defense)
+            if (newThreadInProvenLoss && newThreadScore > bestThreadScore)
                 bestThread = th.get();
         }
         else if (newThreadInProvenWin || newThreadInProvenLoss
