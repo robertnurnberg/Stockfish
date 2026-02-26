@@ -428,7 +428,7 @@ void Search::Worker::iterative_deepening() {
                 // if we would have had time to fully search other root-moves. Thus
                 // we suppress this output and below pick a proven score/PV for this
                 // thread (from the previous iteration).
-                && !(threads.abortedSearch && is_loss(rootMoves[0].uciScore)))
+                && !(threads.stop && is_loss(rootMoves[0].uciScore)))
                 main_manager()->pv(*this, threads, tt, rootDepth);
 
             if (threads.stop)
@@ -440,7 +440,7 @@ void Search::Worker::iterative_deepening() {
 
         // We make sure not to pick an unproven mated-in score,
         // in case this thread prematurely stopped search (aborted-search).
-        if (threads.abortedSearch && rootMoves[0].score != -VALUE_INFINITE
+        if (completedDepth != rootDepth && rootMoves[0].score != -VALUE_INFINITE
             && is_loss(rootMoves[0].score))
         {
             // Bring the last best move to the front for best thread selection.
@@ -1963,7 +1963,7 @@ void SearchManager::check_time(Search::Worker& worker) {
       && ((worker.limits.use_time_management() && (elapsed > tm.maximum() || stopOnPonderhit))
           || (worker.limits.movetime && elapsed >= worker.limits.movetime)
           || (worker.limits.nodes && worker.threads.nodes_searched() >= worker.limits.nodes)))
-        worker.threads.stop = worker.threads.abortedSearch = true;
+        worker.threads.stop = true;
 }
 
 // Used to correct and extend PVs for moves that have a TB (but not a mate) score.
