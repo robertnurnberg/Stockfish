@@ -242,7 +242,9 @@ void Search::Worker::start_searching() {
     if (bestThread != this)
         main_manager()->pv(*bestThread, threads, tt, bestThread->completedDepth);
     else
-        std::cout << "info string omitted printing pv with " << UCIEngine::move(rootMoves[0].pv[0], rootPos.is_chess960()) << std::endl;
+        std::cout << "info string omitted printing pv with "
+                  << UCIEngine::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960())
+                  << " at depth " << bestThread->completedDepth << std::endl;
 
     std::string ponder;
 
@@ -428,7 +430,7 @@ void Search::Worker::iterative_deepening() {
                 std::cout << "info string you bet... case 1 " << rootMoves[0].uciScore << " "
                           << rootMoves[0].score << " = " << UCIEngine::to_cp(rootMoves[0].score, rootPos)
                           << "cp, move is " << UCIEngine::move(rootMoves[0].pv[0], rootPos.is_chess960())
-                          << std::endl;
+                          << "at depth " << rootDepth << std::endl;
             }
 
             if (mainThread
@@ -467,8 +469,10 @@ void Search::Worker::iterative_deepening() {
             lastBestScore     = rootMoves[0].score;
             lastBestMoveDepth = rootDepth;
 
-            std::cout << "info string you bet... case 3 " << lastBestScore << " and also "
-                      << UCIEngine::move(lastBestPV[0], rootPos.is_chess960()) << std::endl;
+            std::cout << "info string you bet... case 3 record lastBestScore " << lastBestScore
+                      << " = " << UCIEngine::to_cp(lastBestScore, rootPos) << "cp, with move "
+                      << UCIEngine::move(lastBestPV[0], rootPos.is_chess960())
+                      << " at depth " << rootDepth << std::endl;
         } else
             std::cout << "info string you bet... case 4 " << std::endl;
 
