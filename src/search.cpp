@@ -425,7 +425,7 @@ void Search::Worker::iterative_deepening() {
             // Sort the PV lines searched so far and update the GUI
             std::stable_sort(rootMoves.begin() + pvFirst, rootMoves.begin() + pvIdx + 1);
 
-            if (threads.abortedSearch && is_loss(rootMoves[0].uciScore))
+            if (threads.stop && is_loss(rootMoves[0].uciScore))
             {
                 std::cout << "info string you bet... case 1 " << rootMoves[0].uciScore << " "
                           << rootMoves[0].score << " = " << UCIEngine::to_cp(rootMoves[0].score, rootPos)
