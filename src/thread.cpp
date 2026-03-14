@@ -375,8 +375,14 @@ Thread* ThreadPool::get_best_thread() const {
         const auto bestThreadMoveVote = votes[bestThreadPV[0]];
         const auto newThreadMoveVote  = votes[newThreadPV[0]];
 
-        const bool bestThreadInProvenWin = is_win(bestThreadScore);
-        const bool newThreadInProvenWin  = is_win(newThreadScore);
+        // Aborted searches may lead to inexact win scores. Loss scores are
+        // guaranteed to be from a completed iteration, so they cannot be bounds.
+        const bool bestThreadInProvenWin = is_win(bestThreadScore)
+                                        && !bestThread->worker->rootMoves[0].scoreLowerbound
+                                        && !bestThread->worker->rootMoves[0].scoreUpperbound;
+        const bool newThreadInProvenWin = is_win(newThreadScore)
+                                       && !th->worker->rootMoves[0].scoreLowerbound
+                                       && !th->worker->rootMoves[0].scoreUpperbound;
 
         const bool bestThreadInProvenLoss =
           bestThreadScore != -VALUE_INFINITE && is_loss(bestThreadScore);
@@ -391,7 +397,7 @@ Thread* ThreadPool::get_best_thread() const {
         if (bestThreadInProvenWin)
         {
             // Make sure we pick the shortest mate / TB conversion
-            if (newThreadScore > bestThreadScore)
+            if (newThreadInProvenWin && newThreadScore > bestThreadScore)
                 bestThread = th.get();
         }
         else if (bestThreadInProvenLoss)
