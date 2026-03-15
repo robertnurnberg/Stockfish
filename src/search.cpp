@@ -194,7 +194,8 @@ void Search::Worker::start_searching() {
                             main_manager()->originalTimeAdjust);
     tt.new_search();
 
-    if (rootMoves.empty())
+    const bool noRootMoves = rootMoves.empty();
+    if (noRootMoves)
     {
         rootMoves.emplace_back(Move::none());
         main_manager()->updates.onUpdateNoMoves(
@@ -231,8 +232,7 @@ void Search::Worker::start_searching() {
     Skill   skill =
       Skill(options["Skill Level"], options["UCI_LimitStrength"] ? int(options["UCI_Elo"]) : 0);
 
-    if (int(options["MultiPV"]) == 1 && !limits.depth && !limits.mate && !skill.enabled()
-        && rootMoves[0].pv[0] != Move::none())
+    if (int(options["MultiPV"]) == 1 && !limits.depth && !skill.enabled() && !noRootMoves)
         bestThread = threads.get_best_thread()->worker.get();
 
     main_manager()->bestPreviousScore        = bestThread->rootMoves[0].score;
@@ -458,9 +458,6 @@ void Search::Worker::iterative_deepening() {
             lastBestMoveDepth = rootDepth;
         }
 
-        if (!mainThread)
-            continue;
-
         // Have we found a "mate in x"?
         if (limits.mate && rootMoves[0].score == rootMoves[0].uciScore
             && ((rootMoves[0].score >= VALUE_MATE_IN_MAX_PLY
@@ -469,6 +466,9 @@ void Search::Worker::iterative_deepening() {
                     && rootMoves[0].score <= VALUE_MATED_IN_MAX_PLY
                     && VALUE_MATE + rootMoves[0].score <= 2 * limits.mate)))
             threads.stop = true;
+
+        if (!mainThread)
+            continue;
 
         // If the skill level is enabled and time is up, pick a sub-optimal best move
         if (skill.enabled() && skill.time_to_pick(rootDepth))
