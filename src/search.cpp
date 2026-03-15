@@ -194,8 +194,7 @@ void Search::Worker::start_searching() {
                             main_manager()->originalTimeAdjust);
     tt.new_search();
 
-    const bool noRootMoves = rootMoves.empty();
-    if (noRootMoves)
+    if (rootMoves.empty())
     {
         rootMoves.emplace_back(Move::none());
         main_manager()->updates.onUpdateNoMoves(
@@ -232,7 +231,8 @@ void Search::Worker::start_searching() {
     Skill   skill =
       Skill(options["Skill Level"], options["UCI_LimitStrength"] ? int(options["UCI_Elo"]) : 0);
 
-    if (int(options["MultiPV"]) == 1 && !limits.depth && !skill.enabled() && !noRootMoves)
+    if (int(options["MultiPV"]) == 1 && !limits.depth && !skill.enabled()
+        && rootMoves[0].pv[0] != Move::none())
         bestThread = threads.get_best_thread()->worker.get();
 
     main_manager()->bestPreviousScore        = bestThread->rootMoves[0].score;
@@ -261,9 +261,9 @@ void Search::Worker::iterative_deepening() {
 
     Move pv[MAX_PLY + 1];
 
-    Depth lastBestMoveDepth = 0;
-    Value lastBestScore     = -VALUE_INFINITE;
-    auto  lastBestPV        = std::vector{Move::none()};
+    Depth             lastBestMoveDepth = 0;
+    Value             lastBestScore     = -VALUE_INFINITE;
+    std::vector<Move> lastBestPV;
 
     Value  alpha, beta;
     Value  bestValue     = -VALUE_INFINITE;
@@ -446,12 +446,20 @@ void Search::Worker::iterative_deepening() {
             && is_loss(rootMoves[0].score))
         {
             // Bring the last best move to the front for best thread selection.
-            Utility::move_to_front(rootMoves, [&lastBestPV = std::as_const(lastBestPV)](
-                                                const auto& rm) { return rm == lastBestPV[0]; });
-            rootMoves[0].pv    = lastBestPV;
-            rootMoves[0].score = rootMoves[0].uciScore = lastBestScore;
+            // For an aborted d1 search we label the loss score as inexact.
+            if (!lastBestPV.empty())
+            {
+                Utility::move_to_front(rootMoves,
+                                       [&lastBestPV = std::as_const(lastBestPV)](const auto& rm) {
+                                           return rm == lastBestPV[0];
+                                       });
+                rootMoves[0].pv    = lastBestPV;
+                rootMoves[0].score = rootMoves[0].uciScore = lastBestScore;
+            }
+            else if (!rootMoves[0].scoreLowerbound)
+                rootMoves[0].scoreUpperbound = true;
         }
-        else if (rootMoves[0].pv[0] != lastBestPV[0])
+        else if (lastBestPV.empty() || rootMoves[0].pv[0] != lastBestPV[0])
         {
             lastBestPV        = rootMoves[0].pv;
             lastBestScore     = rootMoves[0].score;
