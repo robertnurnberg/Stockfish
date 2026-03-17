@@ -445,6 +445,13 @@ void Search::Worker::iterative_deepening() {
                      && rootMoves[0].score == rootMoves[0].uciScore))
                 main_manager()->pv(*this, threads, tt, rootDepth);
 
+            if (rootMoves[0].uciScore != rootMoves[0].score && !rootMoves[0].scoreLowerbound && !rootMoves[0].scoreUpperbound) {
+                std::cout << "info string you bet... PROBLEM " << rootMoves[0].uciScore << " "
+                          << rootMoves[0].score << " = " << UCIEngine::to_cp(rootMoves[0].score, rootPos)
+                          << "cp, move is " << UCIEngine::move(rootMoves[0].pv[0], rootPos.is_chess960())
+                          << "at depth " << rootDepth << std::endl;
+            }
+
             if (threads.stop)
                 break;
         }
