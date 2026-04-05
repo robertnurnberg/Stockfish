@@ -344,6 +344,7 @@ class Worker {
     Value     rootDelta;
 
     std::vector<Move> lastIterationPV;
+    bool              uciPvSent;
 
     size_t                    threadIdx, numaThreadIdx, numaTotal;
     NumaReplicatedAccessToken numaAccessToken;
