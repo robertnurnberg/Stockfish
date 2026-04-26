@@ -270,8 +270,9 @@ bool Search::Worker::iterative_deepening() {
     Depth lastBestMoveDepth = 0;
 
     Value  alpha, beta;
-    Value  bestValue     = -VALUE_INFINITE;
-    Color  us            = rootPos.side_to_move();
+    Value  bestValue          = -VALUE_INFINITE;
+    Value  lastIterationScore = -VALUE_INFINITE;
+    Color  us                 = rootPos.side_to_move();
     double timeReduction = 1, totBestMoveChanges = 0;
     int    delta, iterIdx                        = 0;
 
@@ -459,6 +460,10 @@ bool Search::Worker::iterative_deepening() {
                 break;
         }
 
+        const bool forgottenMate = lastIterationScore != -VALUE_INFINITE
+                                && is_mate_or_mated(lastIterationScore)
+                                && std::abs(rootMoves[0].score) < std::abs(lastIterationScore);
+
         if (!threads.stop)
         {
             completedDepth = rootDepth;
@@ -466,13 +471,23 @@ bool Search::Worker::iterative_deepening() {
             if (lastIterationPV.empty() || rootMoves[0].pv[0] != lastIterationPV[0])
                 lastBestMoveDepth = rootDepth;
 
-            lastIterationPV = rootMoves[0].pv;
+            // Do not replace (shorter) mate scores from a previous iteration.
+            if (!forgottenMate)
+            {
+                lastIterationPV    = rootMoves[0].pv;
+                lastIterationScore = rootMoves[0].score;
+            }
         }
 
         // A mated-in/TB-loss score from an aborted search cannot be trusted: the loss
         // could be delayed or refuted upon exploring the remaining root-moves.
         // Thus here we roll back to the score from the previous iteration.
-        else if (!pvIdx && rootMoves[0].score != -VALUE_INFINITE && is_loss(rootMoves[0].score))
+        // We do the same if a search has failed to recover a mate score that was found
+        // in a previous iteration.
+        if (!pvIdx
+            && ((threads.stop && rootMoves[0].score != -VALUE_INFINITE
+                 && is_loss(rootMoves[0].score))
+                || (rootMoves[0].score != -VALUE_INFINITE && forgottenMate)))
         {
             // Bring the last best move to the front for best thread selection.
             if (!lastIterationPV.empty())
@@ -480,7 +495,7 @@ bool Search::Worker::iterative_deepening() {
                 Utility::move_to_front(rootMoves, [&lastPV = std::as_const(lastIterationPV)](
                                                     const auto& rm) { return rm == lastPV[0]; });
                 rootMoves[0].pv    = lastIterationPV;
-                rootMoves[0].score = rootMoves[0].uciScore = rootMoves[0].previousScore;
+                rootMoves[0].score = rootMoves[0].uciScore = lastIterationScore;
 
                 if (mainThread)
                     uciPvSent = true;
