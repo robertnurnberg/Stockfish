@@ -499,6 +499,7 @@ bool Search::Worker::iterative_deepening() {
                       });
                     rootMoves[0].pv    = lastIterationPV;
                     rootMoves[0].score = rootMoves[0].uciScore = lastIterationScore;
+                    rootMoves[0].scoreLowerbound = rootMoves[0].scoreUpperbound = false;
 
                     if (mainThread)
                         uciPvSent = false;
