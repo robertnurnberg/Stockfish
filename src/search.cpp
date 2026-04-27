@@ -270,8 +270,9 @@ bool Search::Worker::iterative_deepening() {
     Depth lastBestMoveDepth = 0;
 
     Value  alpha, beta;
-    Value  bestValue     = -VALUE_INFINITE;
-    Color  us            = rootPos.side_to_move();
+    Value  bestValue          = -VALUE_INFINITE;
+    Value  lastIterationScore = -VALUE_INFINITE;
+    Color  us                 = rootPos.side_to_move();
     double timeReduction = 1, totBestMoveChanges = 0;
     int    delta, iterIdx                        = 0;
 
@@ -441,8 +442,8 @@ bool Search::Worker::iterative_deepening() {
                    && rootMoves[pvIdx].previousScore < rootMoves[pvIdx - 1].score)
                     ? rootMoves[pvIdx].previousScore
                     : rootMoves[pvIdx - 1].score;
-                rootMoves[pvIdx].previousScore   = -VALUE_INFINITE;
-                rootMoves[pvIdx].scoreLowerbound = rootMoves[pvIdx].scoreUpperbound = false;
+                rootMoves[pvIdx].previousScore = -VALUE_INFINITE;
+                rootMoves[pvIdx].unset_bound_flags();
                 rootMoves[pvIdx].pv.resize(1);
             }
 
@@ -459,6 +460,11 @@ bool Search::Worker::iterative_deepening() {
                 break;
         }
 
+        const bool forgottenMate = lastIterationScore != -VALUE_INFINITE
+                                && is_mate_or_mated(lastIterationScore)
+                                && (std::abs(rootMoves[0].score) < std::abs(lastIterationScore)
+                                    || rootMoves[0].score_is_bound());
+
         if (!threads.stop)
         {
             completedDepth = rootDepth;
@@ -466,27 +472,38 @@ bool Search::Worker::iterative_deepening() {
             if (lastIterationPV.empty() || rootMoves[0].pv[0] != lastIterationPV[0])
                 lastBestMoveDepth = rootDepth;
 
-            lastIterationPV = rootMoves[0].pv;
+            // Do not replace (shorter) mate scores from a previous iteration.
+            if (!forgottenMate)
+            {
+                lastIterationPV    = rootMoves[0].pv;
+                lastIterationScore = rootMoves[0].score;
+            }
         }
+
+        const bool abortedLossSearch =
+          threads.stop && !pvIdx && rootMoves[0].score != -VALUE_INFINITE
+          && is_loss(rootMoves[0].score) && !rootMoves[0].score_is_bound();
 
         // A mated-in/TB-loss score from an aborted search cannot be trusted: the loss
         // could be delayed or refuted upon exploring the remaining root-moves.
         // Thus here we roll back to the score from the previous iteration.
-        else if (!pvIdx && rootMoves[0].score != -VALUE_INFINITE && is_loss(rootMoves[0].score))
+        // We do the same if a search has failed to recover a mate score that was found
+        // in a previous iteration.
+        if (abortedLossSearch || (rootMoves[0].score != -VALUE_INFINITE && forgottenMate))
         {
-            // Bring the last best move to the front for best thread selection.
             if (!lastIterationPV.empty())
             {
                 Utility::move_to_front(rootMoves, [&lastPV = std::as_const(lastIterationPV)](
                                                     const auto& rm) { return rm == lastPV[0]; });
                 rootMoves[0].pv    = lastIterationPV;
-                rootMoves[0].score = rootMoves[0].uciScore = rootMoves[0].previousScore;
+                rootMoves[0].score = rootMoves[0].uciScore = lastIterationScore;
+                rootMoves[0].unset_bound_flags();
 
                 if (mainThread)
-                    uciPvSent = true;
+                    uciPvSent = false;
             }
-            // For an aborted d1 search we label the loss score as inexact.
-            else if (!rootMoves[0].scoreLowerbound)
+            // For an aborted d1 search we label the loss score as an upper bound.
+            else if (abortedLossSearch)
                 rootMoves[0].scoreUpperbound = true;
         }
 
@@ -1356,7 +1373,7 @@ moves_loop:  // When in check, search starts here
             {
                 rm.score = rm.uciScore = value;
                 rm.selDepth            = selDepth;
-                rm.scoreLowerbound = rm.scoreUpperbound = false;
+                rm.unset_bound_flags();
 
                 if (value >= beta)
                 {
@@ -2165,7 +2182,7 @@ void SearchManager::pv(Search::Worker&           worker,
 
         // Potentially correct and extend the PV, and in exceptional cases v
         if (is_decisive(v) && std::abs(v) < VALUE_MATE_IN_MAX_PLY
-            && ((!rootMoves[i].scoreLowerbound && !rootMoves[i].scoreUpperbound) || isExact))
+            && (!rootMoves[i].score_is_bound() || isExact))
             syzygy_extend_pv(worker.options, worker.limits, pos, rootMoves[i], v);
 
         std::string pv;
