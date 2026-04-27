@@ -460,9 +460,10 @@ bool Search::Worker::iterative_deepening() {
                 break;
         }
 
-        const bool forgottenMate = lastIterationScore != -VALUE_INFINITE
-                                && is_mate_or_mated(lastIterationScore)
-                                && std::abs(rootMoves[0].score) < std::abs(lastIterationScore);
+        const bool forgottenMate =
+          lastIterationScore != -VALUE_INFINITE && is_mate_or_mated(lastIterationScore)
+          && (std::abs(rootMoves[0].score) < std::abs(lastIterationScore)
+              || rootMoves[0].scoreLowerbound || rootMoves[0].scoreUpperbound);
 
         if (!threads.stop)
         {
@@ -479,30 +480,33 @@ bool Search::Worker::iterative_deepening() {
             }
         }
 
-        // A mated-in/TB-loss score from an aborted search cannot be trusted: the loss
-        // could be delayed or refuted upon exploring the remaining root-moves.
-        // Thus here we roll back to the score from the previous iteration.
-        // We do the same if a search has failed to recover a mate score that was found
-        // in a previous iteration.
-        if (!pvIdx
-            && ((threads.stop && rootMoves[0].score != -VALUE_INFINITE
-                 && is_loss(rootMoves[0].score))
-                || (rootMoves[0].score != -VALUE_INFINITE && forgottenMate)))
+        if (!pvIdx)
         {
-            // Bring the last best move to the front for best thread selection.
-            if (!lastIterationPV.empty())
+            // A mated-in/TB-loss score from an aborted search cannot be trusted: the loss
+            // could be delayed or refuted upon exploring the remaining root-moves.
+            // Thus here we roll back to the score from the previous iteration.
+            // We do the same if a search has failed to recover a mate score that was found
+            // in a previous iteration.
+            const bool abortedLossSearch =
+              threads.stop && rootMoves[0].score != -VALUE_INFINITE && is_loss(rootMoves[0].score);
+            if (abortedLossSearch || (rootMoves[0].score != -VALUE_INFINITE && forgottenMate))
             {
-                Utility::move_to_front(rootMoves, [&lastPV = std::as_const(lastIterationPV)](
-                                                    const auto& rm) { return rm == lastPV[0]; });
-                rootMoves[0].pv    = lastIterationPV;
-                rootMoves[0].score = rootMoves[0].uciScore = lastIterationScore;
+                if (!lastIterationPV.empty())
+                {
+                    Utility::move_to_front(
+                      rootMoves, [&lastPV = std::as_const(lastIterationPV)](const auto& rm) {
+                          return rm == lastPV[0];
+                      });
+                    rootMoves[0].pv    = lastIterationPV;
+                    rootMoves[0].score = rootMoves[0].uciScore = lastIterationScore;
 
-                if (mainThread)
-                    uciPvSent = true;
+                    if (mainThread)
+                        uciPvSent = false;
+                }
+                // For an aborted d1 search we label the loss score as inexact.
+                else if (abortedLossSearch && !rootMoves[0].scoreLowerbound)
+                    rootMoves[0].scoreUpperbound = true;
             }
-            // For an aborted d1 search we label the loss score as inexact.
-            else if (!rootMoves[0].scoreLowerbound)
-                rootMoves[0].scoreUpperbound = true;
         }
 
         // Have we found a "mate in x" after a completed iteration?
