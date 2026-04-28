@@ -441,8 +441,8 @@ bool Search::Worker::iterative_deepening() {
                    && rootMoves[pvIdx].previousScore < rootMoves[pvIdx - 1].score)
                     ? rootMoves[pvIdx].previousScore
                     : rootMoves[pvIdx - 1].score;
-                rootMoves[pvIdx].previousScore   = -VALUE_INFINITE;
-                rootMoves[pvIdx].scoreLowerbound = rootMoves[pvIdx].scoreUpperbound = false;
+                rootMoves[pvIdx].previousScore = -VALUE_INFINITE;
+                rootMoves[pvIdx].unset_bound_flags();
                 rootMoves[pvIdx].pv.resize(1);
             }
 
@@ -492,9 +492,8 @@ bool Search::Worker::iterative_deepening() {
 
         // Have we found a "mate in x" after a completed iteration?
         if (limits.mate && !threads.stop
-            && ((rootMoves[0].score >= VALUE_MATE_IN_MAX_PLY
-                 && VALUE_MATE - rootMoves[0].score <= 2 * limits.mate)
-                || (rootMoves[0].score <= VALUE_MATED_IN_MAX_PLY
+            && ((is_mate(rootMoves[0].score) && VALUE_MATE - rootMoves[0].score <= 2 * limits.mate)
+                || (is_mated(rootMoves[0].score)
                     && VALUE_MATE + rootMoves[0].score <= 2 * limits.mate)))
             threads.stop = true;
 
@@ -1356,7 +1355,7 @@ moves_loop:  // When in check, search starts here
             {
                 rm.score = rm.uciScore = value;
                 rm.selDepth            = selDepth;
-                rm.scoreLowerbound = rm.scoreUpperbound = false;
+                rm.unset_bound_flags();
 
                 if (value >= beta)
                 {
@@ -1809,7 +1808,7 @@ Value value_from_tt(Value v, int ply, int r50c) {
     if (is_win(v))
     {
         // Downgrade a potentially false mate score
-        if (v >= VALUE_MATE_IN_MAX_PLY && VALUE_MATE - v > 100 - r50c)
+        if (is_mate(v) && VALUE_MATE - v > 100 - r50c)
             return VALUE_TB_WIN_IN_MAX_PLY - 1;
 
         // Downgrade a potentially false TB score.
@@ -1823,7 +1822,7 @@ Value value_from_tt(Value v, int ply, int r50c) {
     if (is_loss(v))
     {
         // Downgrade a potentially false mate score.
-        if (v <= VALUE_MATED_IN_MAX_PLY && VALUE_MATE + v > 100 - r50c)
+        if (is_mated(v) && VALUE_MATE + v > 100 - r50c)
             return VALUE_TB_LOSS_IN_MAX_PLY + 1;
 
         // Downgrade a potentially false TB score.
@@ -2158,14 +2157,13 @@ void SearchManager::pv(Search::Worker&           worker,
         if (v == -VALUE_INFINITE)
             v = VALUE_ZERO;
 
-        bool tb = worker.tbConfig.rootInTB && std::abs(v) <= VALUE_TB;
+        bool tb = worker.tbConfig.rootInTB && !is_mate_or_mated(v);
         v       = tb ? rootMoves[i].tbScore : v;
 
         bool isExact = i != pvIdx || tb || !updated;  // tablebase- and previous-scores are exact
 
         // Potentially correct and extend the PV, and in exceptional cases v
-        if (is_decisive(v) && std::abs(v) < VALUE_MATE_IN_MAX_PLY
-            && ((!rootMoves[i].scoreLowerbound && !rootMoves[i].scoreUpperbound) || isExact))
+        if (is_decisive(v) && !is_mate_or_mated(v) && (!rootMoves[i].score_is_bound() || isExact))
             syzygy_extend_pv(worker.options, worker.limits, pos, rootMoves[i], v);
 
         std::string pv;
