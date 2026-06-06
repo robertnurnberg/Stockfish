@@ -364,7 +364,7 @@ Thread* ThreadPool::get_best_thread() const {
 
     // Vote according to score and depth, and select the best thread
     auto thread_voting_value = [minScore, minDepth](Thread* th) {
-        return (th->worker->rootMoves[0].score - minScore + 21) * int(th->worker->rootDepth - minDepth + 8);
+        return (th->worker->rootMoves[0].score - minScore + 4) * int(th->worker->rootDepth - minDepth + 8);
     };
 
     for (auto&& th : threads)
