@@ -1797,11 +1797,7 @@ Config Tablebases::rank_root_moves(const OptionsMap&            options,
     if (config.cardinality >= pos.count<ALL_PIECES>() && !pos.can_castle(ANY_CASTLING))
     {
         // Use DTZ to rank the moves if checkmate is the only zeroing move
-        rankDTZ =
-          rankDTZ
-          || (!pos.pieces(PAWN)
-              && (pos.count<ALL_PIECES>() == 3
-                  || (pos.count<ALL_PIECES>() == 4 && !(pos.pieces(QUEEN) | pos.pieces(ROOK)))));
+        rankDTZ = rankDTZ || pos.dtz_is_dtm();
 
         // Rank moves using DTZ tables, bail out if time_abort flags zeitnot
         config.rootInTB =
