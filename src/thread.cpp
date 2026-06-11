@@ -350,18 +350,25 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
 Thread* ThreadPool::get_best_thread() const {
 
     Thread* bestThread = threads.front().get();
-    Value   minScore   = VALUE_NONE;
+    Value   minScore   = VALUE_INFINITE;
+    Depth   minDepth   = MAX_PLY;
 
     std::unordered_map<Move, i64, Move::MoveHash> votes(
       2 * std::min(size(), bestThread->worker->rootMoves.size()));
 
     // Find the minimum score of all threads
     for (auto&& th : threads)
+    {
         minScore = std::min(minScore, th->worker->rootMoves[0].score);
+        minDepth = std::min(minDepth, th->worker->rootDepth);
+    }
 
     // Vote according to score and depth, and select the best thread
-    auto thread_voting_value = [minScore](Thread* th) {
-        return (th->worker->rootMoves[0].score - minScore + 14) * int(th->worker->rootDepth);
+    auto thread_voting_value = [minScore, minDepth](Thread* th) {
+        // python -c "b=1.5; print([7 + round(b**i) for i in range(10)])"
+        static constexpr int depthWeight[] = {8, 9, 9, 10, 12, 15, 18, 24, 33, 45};
+        int depthIdx = std::min(th->worker->rootDepth - minDepth, (int) std::size(depthWeight) - 1);
+        return (th->worker->rootMoves[0].score - minScore + 14) * depthWeight[depthIdx];
     };
 
     for (auto&& th : threads)
