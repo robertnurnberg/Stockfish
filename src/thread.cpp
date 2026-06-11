@@ -365,8 +365,8 @@ Thread* ThreadPool::get_best_thread() const {
 
     // Vote according to score and depth, and select the best thread
     auto thread_voting_value = [minScore, minDepth](Thread* th) {
-        // python -c "b=1.8; print([7 + round(b**i) for i in range(10)])"
-        static constexpr int depthWeight[] = {8, 9, 10, 13, 17, 26, 41, 68, 117, 205};
+        // python -c "b=2; print([7 + round(b**i) for i in range(10)])"
+        static constexpr int depthWeight[] = {8, 9, 11, 15, 23, 39, 71, 135, 263, 519};
         int depthIdx = std::min(th->worker->rootDepth - minDepth, (int) std::size(depthWeight) - 1);
         return (th->worker->rootMoves[0].score - minScore + 14) * depthWeight[depthIdx];
     };
