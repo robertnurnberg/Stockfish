@@ -246,6 +246,8 @@ void Search::Worker::start_searching() {
         && bestThread->rootMoves[0].extract_ponder_from_tt(tt, rootPos))
         uciPvSent = false;
 
+    std::cout << "info string bestthread " << bestThread->threadIdx << "\n";
+
     // Send PV info if it has changed since last output in iterative_deepening().
     if (!uciPvSent || bestThread != this)
         main_manager()->pv(*bestThread, threads, tt, bestThread->rootDepth);
@@ -441,7 +443,8 @@ bool Search::Worker::iterative_deepening() {
             // Hence we guard against an aborted pvIdx line overtaking pvIdx - 1
             // when pvIdx - 1 is a proven loss.
             // Moreover, we do not trust an exact loss score from an aborted search.
-            if (threads.stop && pvIdx
+            bool stopped = false;
+            if (threads.stop && pvIdx && (stopped = true)
                 && ((is_loss(rootMoves[pvIdx - 1].score) && rootMoves[pvIdx] < rootMoves[pvIdx - 1])
                     || rootMoves[pvIdx].score_is_exact_loss()))
             {
@@ -450,6 +453,15 @@ bool Search::Worker::iterative_deepening() {
                 if (rootMoves[pvIdx].previousScore != -VALUE_INFINITE
                     && rootMoves[pvIdx].previousScore <= rootMoves[pvIdx - 1].score)
                 {
+                    auto msg = "info string stopped thread " + std::to_string(threadIdx)
+                             + " for multipv " + std::to_string(pvIdx + 1) + " with rootmove "
+                             + UCIEngine::move(rootMoves[pvIdx].pv[0], false) + " replaced score "
+                             + std::to_string(rootMoves[pvIdx].score) + " with previousScore "
+                             + std::to_string(rootMoves[pvIdx].previousScore)
+                             + " and previousPV.size "
+                             + std::to_string(rootMoves[pvIdx].previousPV.size()) + "\n";
+                    std::cout << msg;
+
                     rootMoves[pvIdx].score = rootMoves[pvIdx].uciScore =
                       rootMoves[pvIdx].previousScore;
                     rootMoves[pvIdx].previousScore = -VALUE_INFINITE;
@@ -463,6 +475,14 @@ bool Search::Worker::iterative_deepening() {
                 {
                     if (is_loss(rootMoves[pvIdx - 1].score))
                     {
+                        auto msg = "info string stopped thread " + std::to_string(threadIdx)
+                                 + " for multipv " + std::to_string(pvIdx + 1) + " with rootmove "
+                                 + UCIEngine::move(rootMoves[pvIdx].pv[0], false)
+                                 + " replaced score " + std::to_string(rootMoves[pvIdx].score)
+                                 + " with score " + std::to_string(rootMoves[pvIdx - 1].score)
+                                 + " and flag as bound \n";
+                        std::cout << msg;
+
                         rootMoves[pvIdx].score = rootMoves[pvIdx].uciScore =
                           rootMoves[pvIdx - 1].score;
                         rootMoves[pvIdx].previousScore = -VALUE_INFINITE;
@@ -470,10 +490,28 @@ bool Search::Worker::iterative_deepening() {
                         rootMoves[pvIdx].scoreUpperbound = true;
                     }
                     else
-                        rootMoves[pvIdx].scoreUpperbound = false;
+                    {
+                        auto msg = "info string stopped thread " + std::to_string(threadIdx)
+                                 + " for multipv " + std::to_string(pvIdx + 1) + " with rootmove "
+                                 + UCIEngine::move(rootMoves[pvIdx].pv[0], false) + " score "
+                                 + std::to_string(rootMoves[pvIdx].score) + " flagged as bound \n";
+                        std::cout << msg;
 
+                        rootMoves[pvIdx].scoreUpperbound = false;
+                    }
                     rootMoves[pvIdx].scoreLowerbound = !rootMoves[pvIdx].scoreUpperbound;
                 }
+            }
+
+            if (stopped)
+            {
+                auto msg = "info string stopped thread " + std::to_string(threadIdx)
+                         + " for multipv " + std::to_string(pvIdx + 1) + " with rootmove "
+                         + UCIEngine::move(rootMoves[pvIdx].pv[0], false) + " score "
+                         + std::to_string(rootMoves[pvIdx].score) + " previous rootmove "
+                         + UCIEngine::move(rootMoves[pvIdx - 1].pv[0], false) + " score "
+                         + std::to_string(rootMoves[pvIdx - 1].score) + "\n";
+                std::cout << msg;
             }
 
             // Sort the PV lines searched so far and update the GUI
