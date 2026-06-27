@@ -132,7 +132,6 @@ constexpr Bitboard pawn_single_push_bb(Color c, Bitboard b) {
 
 inline int edge_distance(File f) { return std::min(f, File(FILE_H - f)); }
 
-
 constexpr int constexpr_popcount(Bitboard b) {
     b = b - ((b >> 1) & 0x5555555555555555ULL);
     b = (b & 0x3333333333333333ULL) + ((b >> 2) & 0x3333333333333333ULL);
