@@ -147,6 +147,7 @@ void update_all_stats(const Position& pos,
                       bool            PvNode);
 
 bool is_shuffling(Move move, Stack* const ss, const Position& pos) {
+    // Added in #6447 as nonreg to contain search explosions, therefore not tunable
     if (pos.capture_stage(move) || pos.rule50_count() < 10)
         return false;
     if (pos.state()->pliesFromNull < 6 || ss->ply < 20)
