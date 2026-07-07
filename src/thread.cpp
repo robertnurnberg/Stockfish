@@ -351,16 +351,22 @@ Thread* ThreadPool::get_best_thread() const {
 
     Thread* bestThread = threads.front().get();
     Value   minScore   = VALUE_INFINITE;
+    Depth   minDepth   = MAX_PLY;
 
     std::unordered_map<Move, i64, Move::MoveHash> votes(
       2 * std::min(size(), bestThread->worker->rootMoves.size()));
 
     for (auto&& th : threads)
+    {
         minScore = std::min(minScore, th->worker->rootMoves[0].score);
+        minDepth = std::min(minDepth, th->worker->rootDepth);
+    }
 
-    // Vote according to score, and select the best thread
+    // Vote according to score and depth, and select the best thread
     for (auto&& th : threads)
-        votes[th->worker->rootMoves[0].pv[0]] += th->worker->rootMoves[0].score - minScore + 14;
+        votes[th->worker->rootMoves[0].pv[0]] += (th->worker->rootMoves[0].score - minScore + 14)
+                                               * int(th->worker->rootDepth - minDepth + 8);
+    ;
 
     for (auto&& th : threads)
     {
