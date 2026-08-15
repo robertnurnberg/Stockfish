@@ -734,6 +734,7 @@ Value Search::Worker::search(
     constexpr bool PvNode   = nodeType != NonPV;
     constexpr bool rootNode = nodeType == Root;
     const bool     allNode  = !(PvNode || cutNode);
+    const bool     seekMate = rootDepth >= 12 && std::abs(rootMoves[0].score) >= 2000;
 
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)
@@ -1002,8 +1003,8 @@ Value Search::Worker::search(
 
     // Step 8. Futility pruning: child node
     // The depth condition is important for mate finding. It shouldn't be tuned.
-    if (!ss->ttPv && eval >= beta && (!ttData.move || ttCapture) && !is_loss(beta) && !is_win(eval)
-        && depth < futility_depth(eval, beta))
+    if (!ss->ttPv && depth < (seekMate ? 6 : 19) && eval >= beta && (!ttData.move || ttCapture)
+        && !is_loss(beta) && !is_win(eval))
     {
         Value futilityMult = std::min(45 + depth * 4, 85);
         futilityMult -= 20 * !ss->ttHit;
