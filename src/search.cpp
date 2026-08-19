@@ -723,7 +723,7 @@ Value Search::Worker::search(
     constexpr bool PvNode   = nodeType != NonPV;
     constexpr bool rootNode = nodeType == Root;
     const bool     allNode  = !(PvNode || cutNode);
-    const bool     seekMate = rootDepth >= 16 && std::abs(rootMoves[0].score) >= 1500;
+    const bool     seekMate = rootDepth >= 16 && std::abs(rootMoves[pvIdx].score) >= 2000;
 
     // Dive into quiescence search when the depth reaches zero
     if (depth <= 0)
