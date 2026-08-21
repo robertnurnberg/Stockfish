@@ -77,7 +77,7 @@ jobs:
 
       - name: Run matetrack th1 go-mate
         working-directory: matetrack
-        timeout-minutes: 60
+        timeout-minutes: 30
         run: |
           python advancepvs.py --targetMate -2 --outFile mates2all.epd > /dev/null
           head -n 1003 mates2all.epd > mates2head.epd
@@ -92,7 +92,7 @@ jobs:
 
       - name: Run matetrack th4 go-mate
         working-directory: matetrack
-        timeout-minutes: 120
+        timeout-minutes: 30
         run: |
           python advancepvs.py --targetMate -2 --outFile mates2all.epd > /dev/null
           head -n 1003 mates2all.epd > mates2head.epd
