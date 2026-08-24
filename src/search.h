@@ -219,6 +219,7 @@ struct InfoShort {
 };
 
 struct InfoFull: InfoShort {
+    int              rawScore;
     int              selDepth;
     usize            multiPV;
     std::string_view wdl;
