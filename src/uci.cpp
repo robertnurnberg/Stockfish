@@ -666,6 +666,8 @@ void UCIEngine::on_update_full(const Engine::InfoFull& info, bool showWDL) {
     if (showWDL)
         ss << " wdl " << info.wdl;
 
+    ss << " raw_score " << info.rawScore;
+
     ss << " nodes " << info.nodes        //
        << " nps " << info.nps            //
        << " hashfull " << info.hashfull  //

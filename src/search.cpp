@@ -2315,6 +2315,7 @@ void SearchManager::output_pv(Search::Worker&           worker,
         info.selDepth = rootMoves[i].selDepth;
         info.multiPV  = i + 1;
         info.score    = {v, pos};
+        info.rawScore = v;
         info.wdl      = wdl;
 
         // TB and previous scores are exact, even though their bound flags may say otherwise.
