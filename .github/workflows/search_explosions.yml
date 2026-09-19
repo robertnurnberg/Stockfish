@@ -1,0 +1,46 @@
+# Run two d12 benches on 10K positions (9K UHO + 1K endgames), each has 2h max
+
+name: Search Explosions
+on:
+  workflow_call:
+jobs:
+  SearchExplosions:
+    name: Search explosions
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: checkout SF repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: Stockfish
+          persist-credentials: false
+
+      - name: build SF
+        working-directory: Stockfish/src
+        run: make -j profile-build
+
+      - name: fetch test positions
+        working-directory: Stockfish/src
+        run: |
+          BOOKS_SHA="65815ccdbc7727cd4f6aee252ba8f67fb740e92f"
+          curl -sfLO "https://raw.githubusercontent.com/official-stockfish/books/${BOOKS_SHA}/UHO_Lichess_4852_v1.epd.zip"
+          curl -sfLO "https://raw.githubusercontent.com/official-stockfish/books/${BOOKS_SHA}/endgames_cdb95105.epd.zip"
+          unzip -o UHO_Lichess_4852_v1.epd.zip
+          unzip -o endgames_cdb95105.epd.zip
+          head -n 9000 UHO_Lichess_4852_v1.epd > positions.epd
+          head -n 1000 endgames_cdb95105.epd >> positions.epd
+
+      - name: run th1 bench
+        working-directory: Stockfish/src
+        timeout-minutes: 120
+        run: |
+          printf 'bench 16 1 12 positions.epd depth\nquit\n' | ./stockfish > benchth1.out 2>&1
+
+      - name: run th4 bench
+        working-directory: Stockfish/src
+        timeout-minutes: 120
+        run: |
+          printf 'setoption name MultiPV value 4\nbench 16 4 12 positions.epd depth\nquit\n' | ./stockfish > benchth4.out 2>&1

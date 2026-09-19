@@ -144,6 +144,10 @@ jobs:
     name: Matetrack
     if: ${{ always() }}
     uses: ./.github/workflows/matetrack.yml
+  SeachExplosions:
+    name: Search explosions
+    if: ${{ always() }}
+    uses: ./.github/workflows/search_explosions.yml
   Games:
     name: Games
     if: ${{ always() }}
