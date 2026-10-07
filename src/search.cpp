@@ -1758,9 +1758,10 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
             // ttValue can be used as a better position evaluation
-            if (is_valid(ttData.value) && !is_decisive(ttData.value)
+            if (is_valid(ttData.value)
                 && (ttData.bound & (ttData.value > bestValue ? BOUND_LOWER : BOUND_UPPER)))
-                bestValue = ttData.value;
+                bestValue = std::clamp(ttData.value, VALUE_TB_LOSS_IN_MAX_PLY + 1,
+                                       VALUE_TB_WIN_IN_MAX_PLY - 1);
         }
         else
         {
