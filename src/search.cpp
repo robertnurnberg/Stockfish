@@ -380,8 +380,6 @@ bool Search::Worker::iterative_deepening() {
                         break;
             }
 
-            lastIterationIdxPV = rootMoves[pvIdx].previousPV;
-
             // Reset UCI info selDepth for each depth and each PV line
             selDepth = 0;
 
@@ -790,10 +788,11 @@ Value Search::Worker::search(
     bestValue     = -VALUE_INFINITE;
     maxValue      = VALUE_INFINITE;
 
+    assert(rootNode || previousPV);
     ss->followPV = rootNode
                 || ((ss - 1)->followPV
-                    && (static_cast<usize>(ss->ply - 1) < lastIterationIdxPV.size()
-                        && (ss - 1)->currentMove == lastIterationIdxPV[ss->ply - 1]));
+                    && (static_cast<usize>(ss->ply - 1) < previousPV->size()
+                        && (ss - 1)->currentMove == (*previousPV)[ss->ply - 1]));
 
     // Check for the available remaining time
     if (is_mainthread())
@@ -1164,8 +1163,13 @@ moves_loop:  // When in check, search starts here
         // At root obey the "searchmoves" option and skip moves not listed in Root
         // Move List. In MultiPV mode we also skip PV moves that have been already
         // searched and those of lower "TB rank" if we are in a TB root position.
-        if (rootNode && !std::count(rootMoves.begin() + pvIdx, rootMoves.begin() + pvLast, move))
-            continue;
+        if (rootNode)
+        {
+            auto rm = std::find(rootMoves.begin() + pvIdx, rootMoves.begin() + pvLast, move);
+            if (rm == rootMoves.begin() + pvLast)
+                continue;
+            previousPV = &rm->previousPV;
+        }
 
         ss->moveCount = ++moveCount;
 
