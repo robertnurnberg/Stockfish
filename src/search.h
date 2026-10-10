@@ -387,7 +387,7 @@ class Worker {
     RootMoves rootMoves;
     Depth     rootDepth;
 
-    PVMoves lastIterationIdxPV;
+    const RootPVMoves* previousPV = nullptr;
 
     usize                     threadIdx, numaThreadIdx, numaTotal;
     NumaReplicatedAccessToken numaAccessToken;
