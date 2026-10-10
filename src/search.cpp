@@ -1146,7 +1146,8 @@ moves_loop:  // When in check, search starts here
 
     value = bestValue;
 
-    int moveCount = 0;
+    int             moveCount   = 0;
+    const RootMove* topRootMove = nullptr;
 
     // Step 14. Loop through all pseudo-legal moves until no moves remain
     // or a beta cutoff occurs.
@@ -1527,7 +1528,8 @@ moves_loop:  // When in check, search starts here
                 // We record how often the best move has been changed in each iteration.
                 // This information is used for time management. In MultiPV mode,
                 // we must take care to only do this for the first PV line.
-                if (moveCount > 1 && !pvIdx)
+                if (limits.use_time_management() && moveCount > 1 && !pvIdx
+                    && !(topRootMove && rm.pv_transposes_to(pos, *topRootMove, 6)))
                     ++bestMoveChanges;
             }
             else

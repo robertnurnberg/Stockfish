@@ -24,6 +24,7 @@
 #include <atomic>
 #include <cassert>
 #include <functional>
+#include <list>
 #include <map>
 #include <memory>
 #include <string>
@@ -149,6 +150,36 @@ struct RootMove {
     // Sort in descending order
     bool operator<(const RootMove& m) const {
         return m.score != score ? m.score < score : m.previousScore < previousScore;
+    }
+    // check if transposition occurs within first maxPlies plies
+    bool pv_transposes_to(Position& pos, const RootMove& m, size_t maxPlies) const {
+        maxPlies = std::min({maxPlies, pv.size(), m.pv.size()});
+        assert(maxPlies && pv[0] != m.pv[0]);
+
+        std::list<StateInfo> sts;
+        std::vector<Key>     keys;
+        keys.reserve(maxPlies);
+
+        size_t ply;
+        for (ply = 0; ply < maxPlies; ++ply)
+        {
+            pos.do_move(pv[ply], sts.emplace_back());
+            keys.push_back(pos.state()->key);
+        }
+        while (ply > 0)
+            pos.undo_move(pv[--ply]);
+        sts.clear();
+
+        bool transposes = false;
+        for (ply = 0; ply < maxPlies && !transposes; ++ply)
+        {
+            pos.do_move(m.pv[ply], sts.emplace_back());
+            transposes = pos.state()->key == keys[ply];
+        }
+        while (ply > 0)
+            pos.undo_move(m.pv[--ply]);
+
+        return transposes;
     }
 
     u64         effort           = 0;
