@@ -152,7 +152,7 @@ struct RootMove {
     }
     // check if (pseudo) transposition occurs within first T_MAX_MOVES moves
     bool pv_transposes_to(const RootMove& m) const {
-        constexpr usize T_MAX_MOVES = 4;
+        constexpr usize T_MAX_MOVES = 2;
         const usize maxPlies = std::min({2 * T_MAX_MOVES, pv.size(), m.pv.size()});
         assert(maxPlies && pv[0] != m.pv[0]);
 
