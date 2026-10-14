@@ -194,6 +194,8 @@ Search::LimitsType UCIEngine::parse_limits(std::istream& is) {
 
     limits.startTime = now();  // The search starts as early as possible
 
+    limits.movetime = 600 * 1000;  // hard limit of 10m wall time
+
     while (is >> token)
     {
         if (token == "searchmoves")  // Needs to be the last command on the line
