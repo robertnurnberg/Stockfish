@@ -1530,7 +1530,7 @@ moves_loop:  // When in check, search starts here
                 // This information is used for time management. In MultiPV mode,
                 // we must take care to only do this for the first PV line.
                 if (limits.use_time_management() && moveCount > 1 && !pvIdx
-                    && !(topRootMove && rm.pv_transposes_to(pos, *topRootMove, 8)))
+                    && !(topRootMove && rm.pv_transposes_to(pos, *topRootMove, 6)))
                     ++bestMoveChanges;
             }
             else
