@@ -388,7 +388,7 @@ class Worker {
     Depth     rootDepth;
     bool      seekMate = false;
 
-    PVMoves lastIterationIdxPV;
+    const RootPVMoves* previousPV = nullptr;
 
     usize                     threadIdx, numaThreadIdx, numaTotal;
     NumaReplicatedAccessToken numaAccessToken;
