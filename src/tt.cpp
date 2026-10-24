@@ -60,13 +60,26 @@ static constexpr u8 BOUND_MASK      = 0b11 << BOUND_SHIFT;
 static constexpr u8 PV_SHIFT        = BOUND_SHIFT + 2;
 static constexpr u8 PV_MASK         = 1 << PV_SHIFT;
 
+// Clamps a score into the non-decisive range before it is stored in the TT
+static void clamp_tt_value(Value& v, const Bound& b) {
+    if (v == VALUE_NONE)
+        return;
+
+    if (is_win(v))
+        v = (b & BOUND_LOWER) ? VALUE_TB_WIN_IN_MAX_PLY - 1 : VALUE_NONE;
+    else if (is_loss(v))
+        v = (b & BOUND_UPPER) ? VALUE_TB_LOSS_IN_MAX_PLY + 1 : VALUE_NONE;
+}
+
 struct TTEntry {
 
     // Extract data from the TT entry. We have to convert TT internal bitfields
-    // to external types.
+    // to external types. Values that are decisive cannot have been written by
+    // save() and are treated as garbage (VALUE_NONE).
     TTData read() const {
+        const Value v = Value(value16);
         return TTData{Move(move16),
-                      Value(value16),
+                      is_valid(v) && !is_decisive(v) ? v : VALUE_NONE,
                       Value(eval16),
                       Depth(DEPTH_NONE + depth8),
                       Bound((genBound8 & BOUND_MASK) >> BOUND_SHIFT),
@@ -101,6 +114,9 @@ struct TTEntry {
 void TTEntry::save(
   Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, u8 curr_generation) {
 
+    // Never store decisive scores
+    clamp_tt_value(v, b);
+
     // Preserve the old ttmove if we don't have a new one
     if (m || u16(k) != key16)
         move16 = m;
@@ -118,19 +134,6 @@ void TTEntry::save(
         genBound8 = u8(curr_generation | b << BOUND_SHIFT | u8(pv) << PV_SHIFT);
         value16   = i16(v);
         eval16    = i16(ev);
-    }
-
-    // Secondary aging. Important for elementary mate finding.
-    // (*Scaler) Secondary aging on entries relevant to singular extensions
-    // generally scales poorly and requires VVLTC verification.
-    else if (depth8 + DEPTH_NONE >= 5
-             && Bound((genBound8 & BOUND_MASK) >> BOUND_SHIFT) != BOUND_EXACT)
-    {
-        auto v16 = value16;
-
-        // Guard against racy underflows, default to "unoccupied"
-        if (std::abs(v16) < VALUE_INFINITE && is_decisive(v16))
-            depth8 = std::max(int(depth8) - 1, 0);
     }
 }
 
