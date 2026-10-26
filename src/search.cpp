@@ -332,9 +332,8 @@ bool Search::Worker::iterative_deepening() {
 
     multiPV = std::min(multiPV, rootMoves.size());
 
-    int  searchAgainCounter = 0;
-    int  failHighRecovery   = 0;
-    bool uciPvSent          = false;
+    int  failHighRecovery = 0;
+    bool uciPvSent        = false;
 
     lowPlyHistory.fill(102);
 
@@ -365,9 +364,6 @@ bool Search::Worker::iterative_deepening() {
         }
 
         usize pvFirst = pvLast = 0;
-
-        if (!threads.increaseDepth)
-            searchAgainCounter++;
 
         // MultiPV loop: we perform a full root search for each PV line
         for (pvIdx = 0; pvIdx < multiPV; ++pvIdx)
@@ -407,10 +403,8 @@ bool Search::Worker::iterative_deepening() {
                 failHighRecovery = std::max(0, failHighRecovery - 2);
             while (true)
             {
-                // Adjust the effective depth searched, but ensure at least one
-                // effective increment for every four searchAgain steps (see issue #2717).
-                Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt - failHighRecovery
-                                                    - 3 * (searchAgainCounter + 1) / 4);
+                // Adjust the effective depth searched
+                Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt - failHighRecovery);
                 bestValue           = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
                 // Bring the best move to the front. It is critical that sorting
@@ -633,8 +627,6 @@ bool Search::Worker::iterative_deepening() {
                 else
                     threads.stop = true;
             }
-            else
-                threads.increaseDepth = mainThread->ponder || elapsedTime <= totalTime * 0.50;
         }
 
         mainThread->iterValue[iterIdx] = bestValue;

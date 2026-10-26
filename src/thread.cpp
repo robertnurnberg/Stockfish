@@ -301,8 +301,6 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
     main_manager()->stopOnPonderhit = stop = false;
     main_manager()->ponder                 = limits.ponderMode;
 
-    increaseDepth = true;
-
     Search::RootMoves rootMoves;
 
     for (const auto& uciMove : limits.searchmoves)
