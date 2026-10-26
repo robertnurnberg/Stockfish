@@ -144,8 +144,6 @@ void update_correction_history(const Position& pos,
 
 // Add a small random component to draw evaluations to avoid 3-fold blindness
 Value value_draw(usize nodes) { return VALUE_DRAW - 1 + Value(nodes & 0x2); }
-Value value_to_tt(Value v, int ply);
-Value value_from_tt(Value v, int ply, int r50c);
 void  update_continuation_histories(Stack* ss, Piece pc, Square to, int bonus);
 void  update_quiet_histories(
    const Position& pos, Stack* ss, Search::Worker& workerThread, Move move, int bonus);
@@ -841,7 +839,7 @@ Value Search::Worker::search(
 
     ss->ttHit    = ttHit;
     ttData.move  = rootNode ? rootMoves[pvIdx].pv[0] : ttHit ? ttData.move : Move::none();
-    ttData.value = ttHit ? value_from_tt(ttData.value, ss->ply, pos.rule50_count()) : VALUE_NONE;
+    ttData.value = ttHit ? ttData.value : VALUE_NONE;
     ss->ttPv     = excludedMove ? ss->ttPv : PvNode || (ttHit && ttData.is_pv);
     ttCapture    = ttData.move && pos.capture_stage(ttData.move);
 
@@ -917,8 +915,7 @@ Value Search::Worker::search(
             // For high rule50 counts don't produce transposition table cutoffs.
             if (pos.rule50_count() < 96)
             {
-                if (depth >= 7 && ttData.move && pos.legal(ttData.move)
-                    && !is_decisive(ttData.value))
+                if (depth >= 7 && ttData.move && pos.legal(ttData.move))
                 {
                     pos.do_move(ttData.move, st);
                     Key nextPosKey                             = pos.key();
@@ -983,9 +980,8 @@ Value Search::Worker::search(
 
                 if (b == BOUND_EXACT || (b == BOUND_LOWER ? value >= beta : value <= alpha))
                 {
-                    ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, b,
-                                   std::min(MAX_PLY - 1, depth + 6), Move::none(), VALUE_NONE,
-                                   tt.generation());
+                    ttWriter.write(posKey, value, ss->ttPv, b, std::min(MAX_PLY - 1, depth + 6),
+                                   Move::none(), VALUE_NONE, tt.generation());
 
                     return value;
                 }
@@ -1123,8 +1119,8 @@ Value Search::Worker::search(
             if (value >= probCutBeta)
             {
                 // Save ProbCut data into transposition table
-                ttWriter.write(posKey, value_to_tt(value, ss->ply), ss->ttPv, BOUND_LOWER,
-                               probCutDepth + 1, move, unadjustedStaticEval, tt.generation());
+                ttWriter.write(posKey, value, ss->ttPv, BOUND_LOWER, probCutDepth + 1, move,
+                               unadjustedStaticEval, tt.generation());
 
                 if (!is_decisive(value))
                     return value - (probCutBeta - beta);
@@ -1137,7 +1133,7 @@ moves_loop:  // When in check, search starts here
     // Step 13. A small ProbCut idea
     probCutBeta = beta + 428;
     if ((ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 4 && ttData.value >= probCutBeta
-        && !is_decisive(beta) && is_valid(ttData.value) && !is_decisive(ttData.value) && !seekMate)
+        && !is_decisive(beta) && is_valid(ttData.value) && !seekMate)
         return probCutBeta;
 
     const PieceToHistory* contHist[] = {
@@ -1276,8 +1272,8 @@ moves_loop:  // When in check, search starts here
         // (*Scaler) Generally, higher singularBeta (i.e closer to ttValue)
         // and lower extension margins scale well.
         if (!rootNode && move == ttData.move && !excludedMove && depth >= 6 + ss->ttPv
-            && is_valid(ttData.value) && !is_decisive(ttData.value) && (ttData.bound & BOUND_LOWER)
-            && ttData.depth >= depth - 3 && !is_shuffling(move, ss, pos) && !seekMate)
+            && is_valid(ttData.value) && (ttData.bound & BOUND_LOWER) && ttData.depth >= depth - 3
+            && !is_shuffling(move, ss, pos) && !seekMate)
         {
             Value singularBeta  = ttData.value - (59 + 66 * (ss->ttPv && !PvNode)) * depth / 63;
             Depth singularDepth = newDepth / 2;
@@ -1448,11 +1444,8 @@ moves_loop:  // When in check, search starts here
             (ss + 1)->pv->clear();
 
             // Extend move from transposition table if we are about to dive
-            // into qsearch. Decisive score handling improves mate finding
-            // and retrograde analysis.
-            if (move == ttData.move
-                && ((is_valid(ttData.value) && is_decisive(ttData.value) && ttData.depth > 0)
-                    || ttData.depth > 1))
+            // into qsearch.
+            if (move == ttData.move && ttData.depth > 1)
                 newDepth = std::max(newDepth, 1);
 
             value = -search<PV>(pos, ss + 1, -beta, -alpha, newDepth, false);
@@ -1657,7 +1650,7 @@ moves_loop:  // When in check, search starts here
     // Step 24. Write gathered information in transposition table. Note that the
     // static evaluation is saved as it was before correction history.
     if (!excludedMove && !(rootNode && pvIdx))
-        ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), ss->ttPv,
+        ttWriter.write(posKey, bestValue, ss->ttPv,
                        bestValue >= beta    ? BOUND_LOWER
                        : PvNode && bestMove ? BOUND_EXACT
                                             : BOUND_UPPER,
@@ -1740,7 +1733,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
     ss->ttHit    = ttHit;
     ttData.move  = ttHit ? ttData.move : Move::none();
-    ttData.value = ttHit ? value_from_tt(ttData.value, ss->ply, pos.rule50_count()) : VALUE_NONE;
+    ttData.value = ttHit ? ttData.value : VALUE_NONE;
     pvHit        = ttHit && ttData.is_pv;
 
     // At non-PV nodes we check for an early TT cutoff
@@ -1768,7 +1761,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
               to_corrected_static_eval(unadjustedStaticEval, correctionValue);
 
             // ttValue can be used as a better position evaluation
-            if (is_valid(ttData.value) && !is_decisive(ttData.value)
+            if (is_valid(ttData.value)
                 && (ttData.bound & (ttData.value > bestValue ? BOUND_LOWER : BOUND_UPPER)))
                 bestValue = ttData.value;
         }
@@ -1908,9 +1901,8 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
 
     // Step 10. Save gathered info in transposition table. The static evaluation
     // is saved as it was before adjustment by correction history.
-    ttWriter.write(posKey, value_to_tt(bestValue, ss->ply), pvHit,
-                   bestValue >= beta ? BOUND_LOWER : BOUND_UPPER, DEPTH_QS, bestMove,
-                   unadjustedStaticEval, tt.generation());
+    ttWriter.write(posKey, bestValue, pvHit, bestValue >= beta ? BOUND_LOWER : BOUND_UPPER,
+                   DEPTH_QS, bestMove, unadjustedStaticEval, tt.generation());
 
     // The search is now complete
     assert(-VALUE_INFINITE < bestValue && bestValue < VALUE_INFINITE);
@@ -1939,54 +1931,6 @@ Value Search::Worker::evaluate(const Position& pos) {
 }
 
 namespace {
-
-// Adjusts a mate or TB score from "plies to mate from the root" to
-// "plies to mate from the current position". Standard scores are unchanged.
-// The function is called before storing a value in the transposition table.
-Value value_to_tt(Value v, int ply) { return is_win(v) ? v + ply : is_loss(v) ? v - ply : v; }
-
-
-// Inverse of value_to_tt(): it adjusts a mate or TB score from the transposition
-// table (which refers to the plies to mate/be mated from current position) to
-// "plies to mate/be mated (TB win/loss) from the root". However, to avoid
-// potentially false mate or TB scores related to the 50 moves rule and the
-// graph history interaction, we return the highest non-TB score instead.
-Value value_from_tt(Value v, int ply, int r50c) {
-
-    if (!is_valid(v))
-        return VALUE_NONE;
-
-    // Handle TB win or better
-    if (is_win(v))
-    {
-        // Downgrade a potentially false mate score
-        if (is_mate(v) && VALUE_MATE - v > 100 - r50c)
-            return VALUE_TB_WIN_IN_MAX_PLY - 1;
-
-        // Downgrade a potentially false TB score
-        if (VALUE_TB - v > 100 - r50c)
-            return VALUE_TB_WIN_IN_MAX_PLY - 1;
-
-        return v - ply;
-    }
-
-    // Handle TB loss or worse
-    if (is_loss(v))
-    {
-        // Downgrade a potentially false mate score
-        if (is_mated(v) && VALUE_MATE + v > 100 - r50c)
-            return VALUE_TB_LOSS_IN_MAX_PLY + 1;
-
-        // Downgrade a potentially false TB score
-        if (VALUE_TB + v > 100 - r50c)
-            return VALUE_TB_LOSS_IN_MAX_PLY + 1;
-
-        return v + ply;
-    }
-
-    return v;
-}
-
 
 // Updates stats at the end of search() when a bestMove is found
 void update_all_stats(const Position& pos,
