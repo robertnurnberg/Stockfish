@@ -24,6 +24,7 @@
 #include <cstring>
 #include <iostream>
 #include <numeric>
+#include <sstream>
 #include <vector>
 
 #include "bitboard.h"
@@ -109,6 +110,12 @@ struct Cluster {
 
 static_assert(sizeof(Cluster) == 32, "Suboptimal Cluster size");
 
+namespace CollisionHunt {
+std::atomic<Key>            targetKey{0};
+std::atomic<const Cluster*> targetCluster{nullptr};
+std::atomic<bool>           active{false};
+}
+
 // Populates the TTEntry and its key with a new node's data, possibly overwriting
 // an old position. The update is non-atomic and can be racy. We convert external
 // types to internal bitfields.
@@ -128,6 +135,18 @@ void          TTWriter::write(
     if (b == BOUND_EXACT || (k & MASK21) != key21 || d - DEPTH_NONE + 2 * pv > entry.depth8 - 4
         || entry.relative_age(curr_generation))
     {
+        if (CollisionHunt::active && cluster == CollisionHunt::targetCluster
+            && (k & MASK21) == (CollisionHunt::targetKey & MASK21))
+        {
+            std::ostringstream msg;
+            msg << "info string [COLLISION-HUNT] "
+                << (k == CollisionHunt::targetKey ? "TARGET STORE" : "COLLIDING STORE") << " key=0x"
+                << std::hex << k << std::dec << " slot=" << index << " value=" << v
+                << " eval=" << ev << " depth=" << d << " bound=" << int(b)
+                << " move_raw=" << m.raw();
+            sync_cout << msg.str() << sync_endl;
+        }
+
         assert(d > DEPTH_NONE);
         assert(d - DEPTH_NONE < 256);
         assert(curr_generation <= GENERATION_MASK);  // TT::new_search() plays nice
@@ -306,6 +325,10 @@ std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) cons
 // The hash function; its only external use is memory prefetching
 Cluster* TranspositionTable::get_cluster(const Key key) const {
     return &table[mul_hi64(key, clusterCount)];
+}
+
+bool TranspositionTable::collides(const Key a, const Key b) const {
+    return a != b && get_cluster(a) == get_cluster(b) && ((a ^ b) & MASK21) == 0;
 }
 
 }  // namespace Stockfish

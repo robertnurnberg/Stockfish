@@ -19,9 +19,11 @@
 #ifndef TT_H_INCLUDED
 #define TT_H_INCLUDED
 
+#include <atomic>
 #include <tuple>
 
 #include "misc.h"
+
 #include "memory.h"
 #include "types.h"
 
@@ -29,6 +31,12 @@ namespace Stockfish {
 
 class ThreadPool;
 struct Cluster;
+
+namespace CollisionHunt {
+extern std::atomic<Key>            targetKey;      // 64-bit key of targetFEN
+extern std::atomic<const Cluster*> targetCluster;  // and its cluster
+extern std::atomic<bool>           active;
+}
 
 // There is only one global hash table for the engine and all its threads.
 // For chess in particular, we even allow racy updates between threads to and
@@ -110,6 +118,9 @@ class TranspositionTable {
 
     // The hash function; its only external use is memory prefetching
     Cluster* get_cluster(const Key key) const;
+
+    // True iff a and b are different but collide in TT
+    bool collides(const Key a, const Key b) const;
 
    private:
     friend struct TTEntry;

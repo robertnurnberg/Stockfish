@@ -29,8 +29,11 @@
 #include <initializer_list>
 #include <iostream>
 #include <list>
+#include <mutex>
 #include <ratio>
+#include <sstream>
 #include <string>
+#include <unordered_set>
 #include <utility>
 
 #include "bitboard.h"
@@ -51,6 +54,74 @@
 #include "ucioption.h"
 
 namespace Stockfish {
+
+namespace {
+
+// Reports positions that the TT cannot tell apart from targetFEN (same cluster, same 21 key bits).
+// Also publishes target info for TTWriter::write().
+void collision_hunt(const TranspositionTable& tt,
+                    const Position&           pos,
+                    const char*               where,
+                    bool                      ttHit,
+                    const TTData&             ttData) {
+    // position of interest: e.g. FEN after the blunder
+    static constexpr const char* targetFEN =
+      "2r3k1/R1Q2ppp/1p2pn2/8/PP6/3qP1PP/3r1PB1/5RK1 b - - 4 31";
+
+    static std::once_flag          once;
+    static Key                     target = 0;
+    static std::mutex              mtx;
+    static std::unordered_set<Key> seen;
+
+    std::call_once(once, [&] {
+        StateInfo st;
+        Position  p;
+        if (p.set(targetFEN, false, &st))
+        {
+            sync_cout << "info string [COLLISION-HUNT] invalid targetFEN " << targetFEN
+                      << sync_endl;
+            return;
+        }
+        target = p.key();
+        CollisionHunt::targetKey.store(target);
+        sync_cout << "info string [COLLISION-HUNT] target fen: " << p.fen() << sync_endl;
+        sync_cout << "info string [COLLISION-HUNT] target key: 0x" << std::hex << target << std::dec
+                  << "  key21: 0x" << std::hex << (target & ((1ULL << 21) - 1)) << std::dec
+                  << sync_endl;
+    });
+    if (!target)
+        return;
+
+    // refresh the target cluster on every call
+    CollisionHunt::targetCluster.store(tt.get_cluster(target));
+    CollisionHunt::active.store(true);
+
+    const Key k = pos.key();
+    if (k == target)
+        sync_cout << "info string [COLLISION-HUNT] TARGET PROBED (" << where << ") ttHit=" << ttHit
+                  << " ttValue=" << ttData.value << " ttEval=" << ttData.eval
+                  << " ttDepth=" << ttData.depth << " ttBound=" << int(ttData.bound) << sync_endl;
+
+    if (!tt.collides(k, target))
+        return;
+
+    std::lock_guard<std::mutex> lk(mtx);
+    if (!seen.insert(k).second)
+        return;
+
+    std::ostringstream details;
+    details << "key=0x" << std::hex << k << std::dec << " ttHit=" << ttHit;
+    if (ttHit)
+        details << " ttValue=" << ttData.value << " ttEval=" << ttData.eval
+                << " ttDepth=" << ttData.depth << " ttBound=" << int(ttData.bound)
+                << " ttMove=" << UCIEngine::move(ttData.move, false);
+
+    sync_cout << "info string [COLLISION-HUNT] COLLIDING POSITION (" << where << "): " << pos.fen()
+              << sync_endl;
+    sync_cout << "info string [COLLISION-HUNT]     " << details.str() << sync_endl;
+}
+
+}  // namespace
 
 inline int lmr_divisor(int depth) {
     int d = std::min(depth, 16);
@@ -836,6 +907,7 @@ Value Search::Worker::search(
     excludedMove                   = ss->excludedMove;
     posKey                         = pos.key();
     auto [ttHit, ttData, ttWriter] = tt.probe(posKey);
+    collision_hunt(tt, pos, "search", ttHit, ttData);
 
     ss->ttHit    = ttHit;
     ttData.move  = rootNode ? rootMoves[pvIdx].pv[0] : ttHit ? ttData.move : Move::none();
@@ -1736,6 +1808,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     // Step 3. Transposition table lookup
     posKey                         = pos.key();
     auto [ttHit, ttData, ttWriter] = tt.probe(posKey);
+    collision_hunt(tt, pos, "qsearch", ttHit, ttData);
 
     ss->ttHit    = ttHit;
     ttData.move  = ttHit ? ttData.move : Move::none();
