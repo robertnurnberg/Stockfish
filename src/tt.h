@@ -19,6 +19,8 @@
 #ifndef TT_H_INCLUDED
 #define TT_H_INCLUDED
 
+#include <atomic>
+#include <string>
 #include <tuple>
 
 #include "misc.h"
@@ -28,7 +30,22 @@
 namespace Stockfish {
 
 class ThreadPool;
+class Position;
 struct Cluster;
+
+namespace CollisionHunt {
+struct FalseHit {
+    bool valid = false;   // the last probe() of this thread hit a slot of another key,
+                          // or (sameKey) of the same key, which still needs verifying
+    Key   writerKey = 0;  // full key that last wrote that slot
+    usize slot      = 0;
+    bool  sameKey   = false;  // writerKey == probe key: a collision only if the positions differ
+};
+extern thread_local FalseHit        lastFalseHit;  // set by TranspositionTable::probe()
+extern thread_local const Position* currentPos;    // set by search, used by TTWriter::write()
+extern std::atomic<u64>             searchId;      // incremented at the start of every 'go'
+std::string                         writer_fen(usize slot);
+}
 
 // There is only one global hash table for the engine and all its threads.
 // For chess in particular, we even allow racy updates between threads to and

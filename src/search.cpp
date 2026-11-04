@@ -29,7 +29,10 @@
 #include <initializer_list>
 #include <iostream>
 #include <list>
+#include <mutex>
 #include <ratio>
+#include <set>
+#include <sstream>
 #include <string>
 #include <utility>
 
@@ -51,6 +54,77 @@
 #include "ucioption.h"
 
 namespace Stockfish {
+
+namespace {
+
+// FEN without hmc and fmc
+std::string position_id(std::string fen) {
+    for (int i = 0; i < 2; ++i)
+    {
+        const auto p = fen.rfind(' ');
+        if (p == std::string::npos)
+            break;
+        fen.erase(p);
+    }
+    return fen;
+}
+
+// Reports TT false hits, i.e. probes that hit an entry written by a different position
+// (same cluster and same 21 key bits, different pos), once per distinct pair of positions
+// and 'go' command. Must be called right after each tt.probe().
+void collision_hunt(const Position& pos, const char* where, const TTData& ttData) {
+    // Lets TTWriter::write() record the FEN of the position it stores for
+    CollisionHunt::currentPos = &pos;
+
+    const auto& fh = CollisionHunt::lastFalseHit;
+    if (!fh.valid)
+        return;
+
+    const std::string probeFen  = pos.fen();
+    const std::string writerFen = CollisionHunt::writer_fen(fh.slot);
+    const std::string probeId   = position_id(probeFen);
+    const std::string writerId  = position_id(writerFen);
+
+    // Same Zobrist key: only a collision if the positions differ
+    if (fh.sameKey && (writerFen == "<unknown>" || writerId == probeId))
+        return;
+
+    static std::mutex                                    mtx;
+    static std::set<std::pair<std::string, std::string>> seen;
+    static int                                           count      = 0;
+    static u64                                           seenSearch = 0;
+
+    const Key probeKey = pos.key();
+
+    std::lock_guard<std::mutex> lk(mtx);
+
+    // Report each pair of positions once per 'go' command
+    if (seenSearch != CollisionHunt::searchId)
+    {
+        seenSearch = CollisionHunt::searchId;
+        seen.clear();
+        count = 0;
+    }
+    // The writer key keeps writers with unknown FEN apart
+    const auto id = std::make_pair(probeId, writerId + "#" + std::to_string(fh.writerKey));
+    if (!seen.insert(id).second)
+        return;
+
+    std::ostringstream msg;
+    msg << "info string [COLLISION-HUNT] "
+        << (fh.sameKey ? "ZOBRIST KEY COLLISION" : "FALSE TT HIT") << " #" << ++count << " ("
+        << where << ")\ninfo string [COLLISION-HUNT]   probing: " << probeFen << "  key=0x"
+        << std::hex << probeKey << std::dec
+        << "\ninfo string [COLLISION-HUNT]   written by: " << writerFen << "  key=0x" << std::hex
+        << fh.writerKey << std::dec
+        << "\ninfo string [COLLISION-HUNT]   entry: value=" << ttData.value
+        << " eval=" << ttData.eval << " depth=" << ttData.depth << " bound=" << int(ttData.bound)
+        << " move=" << UCIEngine::move(ttData.move, false);
+    sync_cout << msg.str() << sync_endl;
+}
+
+}  // namespace
+
 
 inline int lmr_divisor(int depth) {
     int d = std::min(depth, 16);
@@ -836,6 +910,7 @@ Value Search::Worker::search(
     excludedMove                   = ss->excludedMove;
     posKey                         = pos.key();
     auto [ttHit, ttData, ttWriter] = tt.probe(posKey);
+    collision_hunt(pos, "search", ttData);
 
     ss->ttHit    = ttHit;
     ttData.move  = rootNode ? rootMoves[pvIdx].pv[0] : ttHit ? ttData.move : Move::none();
@@ -921,6 +996,7 @@ Value Search::Worker::search(
                     pos.do_move(ttData.move, st);
                     Key nextPosKey                             = pos.key();
                     auto [ttHitNext, ttDataNext, ttWriterNext] = tt.probe(nextPosKey);
+                    collision_hunt(pos, "search, tt cutoff check of child", ttDataNext);
                     pos.undo_move(ttData.move);
 
                     // Check that the ttValue after the tt move would also trigger a cutoff
@@ -1736,6 +1812,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta)
     // Step 3. Transposition table lookup
     posKey                         = pos.key();
     auto [ttHit, ttData, ttWriter] = tt.probe(posKey);
+    collision_hunt(pos, "qsearch", ttData);
 
     ss->ttHit    = ttHit;
     ttData.move  = ttHit ? ttData.move : Move::none();
