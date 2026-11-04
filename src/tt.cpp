@@ -23,12 +23,15 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <mutex>
 #include <numeric>
+#include <string>
 #include <vector>
 
 #include "bitboard.h"
 #include "memory.h"
 #include "misc.h"
+#include "position.h"
 #include "syzygy/tbprobe.h"
 #include "thread.h"
 
@@ -108,6 +111,67 @@ struct Cluster {
 
 static_assert(sizeof(Cluster) == 32, "Suboptimal Cluster size");
 
+namespace CollisionHunt {
+
+thread_local FalseHit        lastFalseHit;
+thread_local const Position* currentPos = nullptr;
+std::atomic<u64>             searchId{0};
+
+namespace {
+std::mutex               mtx;
+const Cluster*           base = nullptr;  // start of the TT
+std::vector<Key>         writerKeys;      // full key that last wrote each slot (0: none)
+std::vector<std::string> writerFens;      // and the FEN of that position
+
+usize slot_of(const Cluster* cluster, int index) {
+    return usize(cluster - base) * ClusterSize + usize(index);
+}
+}  // namespace
+
+static void on_resize(const Cluster* tableBase, usize clusterCount) {
+    std::lock_guard<std::mutex> lk(mtx);
+    base = tableBase;
+    writerKeys.assign(clusterCount * ClusterSize, 0);
+    writerFens.assign(clusterCount * ClusterSize, std::string());
+}
+
+static void on_clear() {
+    std::lock_guard<std::mutex> lk(mtx);
+    std::fill(writerKeys.begin(), writerKeys.end(), Key(0));
+    for (auto& f : writerFens)
+        f.clear();
+}
+
+// Called when TTWriter::write() really overwrites an entry
+static void on_store(const Cluster* cluster, int index, Key k) {
+    std::lock_guard<std::mutex> lk(mtx);
+    if (!base)
+        return;
+    const usize slot = slot_of(cluster, index);
+    writerKeys[slot] = k;
+    // The search position is back at the node's position when it stores (checked here)
+    writerFens[slot] = currentPos && currentPos->key() == k ? currentPos->fen() : "<unknown>";
+}
+
+// Called by probe() when the 21 key bits matched
+static void on_probe_hit(const Cluster* cluster, int index, Key k, bool occupied) {
+    std::lock_guard<std::mutex> lk(mtx);
+    if (!base || !occupied)
+        return;
+    const usize slot = slot_of(cluster, index);
+    if (writerKeys[slot] && writerKeys[slot] != k)
+        lastFalseHit = {true, writerKeys[slot], slot, false};
+    else if (writerKeys[slot])  // same Zobrist key: collision_hunt() compares the positions
+        lastFalseHit = {true, k, slot, true};
+}
+
+std::string writer_fen(usize slot) {
+    std::lock_guard<std::mutex> lk(mtx);
+    return slot < writerFens.size() ? writerFens[slot] : std::string("<unknown>");
+}
+
+}  // namespace CollisionHunt
+
 // Populates the TTEntry and its key with a new node's data, possibly overwriting
 // an old position. The update is non-atomic and can be racy. We convert external
 // types to internal bitfields.
@@ -130,6 +194,8 @@ void TTWriter::write(
         assert(d > DEPTH_NONE);
         assert(d - DEPTH_NONE < 256);
         assert(curr_generation <= GENERATION_MASK);  // TT::new_search() plays nice
+
+        CollisionHunt::on_store(cluster, index, k);
 
         cluster->keys   = keys ^ (keyDiff << shift);
         entry.depth8    = u8(d - DEPTH_NONE);
@@ -194,12 +260,15 @@ void TranspositionTable::resize(usize mbSize, ThreadPool& threads) {
         exit(EXIT_FAILURE);
     }
 
+    CollisionHunt::on_resize(table, clusterCount);
+
     clear(threads);
 }
 
 
 // Initializes the entire transposition table to zero, in a multi-threaded way
 void TranspositionTable::clear(ThreadPool& threads) {
+    CollisionHunt::on_clear();
     generation8             = 0;
     const usize threadCount = threads.num_threads();
 
@@ -248,6 +317,8 @@ int TranspositionTable::hashfull(int maxAge) const {
 
 // Must be called at the beginning of each root search to track entry aging
 void TranspositionTable::new_search() {
+    ++CollisionHunt::searchId;
+    sync_cout << "info string [COLLISION-HUNT] ---- new search ----" << sync_endl;
     ++generation8;
     // Don't overflow into the other bits of TTEntry::genBound8
     generation8 &= GENERATION_MASK;
@@ -264,6 +335,8 @@ u8 TranspositionTable::generation() const { return generation8; }
 // TTEntry to be replaced later. The value of an entry is its depth minus 8 times
 // its relative age.
 std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) const {
+
+    CollisionHunt::lastFalseHit.valid = false;
 
     Cluster* const cluster = get_cluster(key);
     auto&          tte     = cluster->entry;
@@ -282,6 +355,7 @@ std::tuple<bool, TTData, TTWriter> TranspositionTable::probe(const Key key) cons
     {
         static_assert(KeyBits == 21, "Index computation below assumes KeyBits == 21");
         const int i = (int(lsb(matches)) >> 4) - 1;
+        CollisionHunt::on_probe_hit(cluster, i, key, tte[i].is_occupied());
         // This gap is the main place for read races.
         // After `read()` completes that copy is final, but may be self-inconsistent.
         return {tte[i].is_occupied(), tte[i].read(), TTWriter(cluster, i)};
