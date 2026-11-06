@@ -61,15 +61,26 @@ static constexpr u8 BOUND_MASK      = 0b11 << BOUND_SHIFT;
 static constexpr u8 PV_SHIFT        = BOUND_SHIFT + 2;
 static constexpr u8 PV_MASK         = 1 << PV_SHIFT;
 
-// Clamps a score into the non-decisive range before it is stored in the TT
-static void clamp_tt_value(Value& v, const Bound& b) {
+// Clamps a score (and its bound) into the non-decisive range before it is
+// stored in the TT, keeping the stored (value, bound) pair sound.
+static void clamp_tt_value(Value& v, Bound& b) {
     if (v == VALUE_NONE)
         return;
 
     if (is_win(v))
-        v = (b & BOUND_LOWER) ? VALUE_TB_WIN_IN_MAX_PLY - 1 : VALUE_NONE;
+    {
+        if (b & BOUND_LOWER)
+            v = VALUE_TB_WIN_IN_MAX_PLY - 1, b = BOUND_LOWER;
+        else
+            v = VALUE_NONE;
+    }
     else if (is_loss(v))
-        v = (b & BOUND_UPPER) ? VALUE_TB_LOSS_IN_MAX_PLY + 1 : VALUE_NONE;
+    {
+        if (b & BOUND_UPPER)
+            v = VALUE_TB_LOSS_IN_MAX_PLY + 1, b = BOUND_UPPER;
+        else
+            v = VALUE_NONE;
+    }
 }
 
 struct TTEntry {
