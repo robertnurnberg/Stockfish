@@ -435,6 +435,13 @@ bool Search::Worker::iterative_deepening() {
                 // otherwise exit the loop.
                 if (bestValue <= alpha)
                 {
+                    sync_cout << "info string DEBUG fail-low for multipv " << pvIdx + 1 << " "
+                              << UCIEngine::move(rootMoves[pvIdx].pv[0], rootPos.is_chess960())
+                              << ": rootDepth=" << rootDepth << " adjustedDepth=" << adjustedDepth
+                              << " score=" << rootMoves[pvIdx].score << " alpha=" << alpha
+                              << " beta=" << beta << " searchAgainCounter=" << searchAgainCounter
+                              << " nodes=" << u64(nodes) << sync_endl;
+
                     beta  = alpha;
                     alpha = std::max(bestValue - delta, -VALUE_INFINITE);
 
@@ -444,12 +451,34 @@ bool Search::Worker::iterative_deepening() {
                 }
                 else if (bestValue >= beta)
                 {
+                    sync_cout << "info string DEBUG fail-high for multipv " << pvIdx + 1 << " "
+                              << UCIEngine::move(rootMoves[pvIdx].pv[0], rootPos.is_chess960())
+                              << ": rootDepth=" << rootDepth << " adjustedDepth=" << adjustedDepth
+                              << " score=" << rootMoves[pvIdx].score << " alpha=" << alpha
+                              << " beta=" << beta << " failedHighCnt=" << failedHighCnt
+                              << " failHighRecovery=" << failHighRecovery
+                              << " searchAgainCounter=" << searchAgainCounter
+                              << " nodes=" << u64(nodes) << sync_endl;
+
                     alpha = std::max(beta - delta, alpha);
                     beta  = std::min(bestValue + delta, VALUE_INFINITE);
                     ++failedHighCnt;
                 }
                 else
+                {
+                    if (rootMoves[pvIdx].pv.size() == 1)
+                        sync_cout << "info string DEBUG completed 1-move PV for multipv "
+                                  << pvIdx + 1 << " "
+                                  << UCIEngine::move(rootMoves[pvIdx].pv[0], rootPos.is_chess960())
+                                  << ": rootDepth=" << rootDepth
+                                  << " adjustedDepth=" << adjustedDepth
+                                  << " score=" << rootMoves[pvIdx].score << " alpha=" << alpha
+                                  << " beta=" << beta << " failedHighCnt=" << failedHighCnt
+                                  << " failHighRecovery=" << failHighRecovery
+                                  << " searchAgainCounter=" << searchAgainCounter
+                                  << " nodes=" << u64(nodes) << sync_endl;
                     break;
+                }
 
                 delta += 47 * delta / 128;
 
@@ -1150,6 +1179,8 @@ moves_loop:  // When in check, search starts here
 
     int moveCount = 0;
 
+    const Depth initialDepth = depth;
+
     // Step 14. Loop through all legal moves until no moves remain
     // or a beta cutoff occurs.
     while ((move = mp.next_move()) != Move::none())
@@ -1526,6 +1557,16 @@ moves_loop:  // When in check, search starts here
                 for (Move pvMove : *(ss + 1)->pv)
                     rm.pv.push_back(pvMove);
 
+                if (rm.pv.size() == 1 && value > alpha && initialDepth > 1)
+                    sync_cout << "info string DEBUG new best move with empty child PV: rootDepth="
+                              << rootDepth << " initialDepth=" << initialDepth
+                              << " curDepth=" << depth << " newDepth=" << newDepth
+                              << " move=" << UCIEngine::move(move, pos.is_chess960())
+                              << " moveCount=" << moveCount << " value=" << value
+                              << " alpha=" << alpha << " beta=" << beta
+                              << " ttMove=" << UCIEngine::move(ttData.move, pos.is_chess960())
+                              << " ttDepth=" << ttData.depth << sync_endl;
+
                 // We record how often the best move has been changed in each iteration.
                 // This information is used for time management. In MultiPV mode,
                 // we must take care to only do this for the first PV line.
@@ -1567,7 +1608,16 @@ moves_loop:  // When in check, search starts here
 
                 // Reduce other moves if we have found at least one score improvement
                 if (depth > 3 && depth < 12 && !is_decisive(value))
+                {
+                    if (rootNode)
+                        sync_cout << "info string DEBUG rootNode depth-=3: rootDepth=" << rootDepth
+                                  << " initialDepth=" << initialDepth << " depth=" << depth << "->"
+                                  << (depth - 3)
+                                  << " move=" << UCIEngine::move(move, pos.is_chess960())
+                                  << " moveCount=" << moveCount << " value=" << value
+                                  << " alpha=" << alpha << " beta=" << beta << sync_endl;
                     depth -= 3;
+                }
 
                 assert(depth > 0);
                 alpha = value;  // Update alpha! Always alpha < beta
