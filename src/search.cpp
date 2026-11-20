@@ -406,9 +406,11 @@ bool Search::Worker::iterative_deepening() {
             {
                 // Adjust the effective depth searched, but ensure at least one
                 // effective increment for every four searchAgain steps (see issue #2717).
-                Depth adjustedDepth = std::max(1, rootDepth - failedHighCnt - failHighRecovery
-                                                    - 3 * (searchAgainCounter + 1) / 4);
-                bestValue           = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
+                // For rootDepth > 1 we want to avoid 1-move PVs.
+                Depth adjustedDepth =
+                  std::max(std::min(rootDepth, 2), rootDepth - failedHighCnt - failHighRecovery
+                                                     - 3 * (searchAgainCounter + 1) / 4);
+                bestValue = search<Root>(rootPos, ss, alpha, beta, adjustedDepth, false);
 
                 // Bring the best move to the front. It is critical that sorting
                 // is done with a stable algorithm because all the values but the
@@ -508,6 +510,26 @@ bool Search::Worker::iterative_deepening() {
                     if (rootMoves[i].is_exact_loss())
                         rootMoves[i].inexactLower = true;
             }
+
+#ifndef NDEBUG
+            if (!threads.stop && rootDepth >= 2)
+            {
+                const auto& rm = rootMoves[pvIdx];
+                assert(!rm.pv.empty());
+                if (rm.pv.size() == 1)
+                {
+                    StateInfo st;
+                    rootPos.do_move(rm.pv[0], st);
+                    const bool validOneMovePV =
+                      rootPos.is_draw(1) || rootPos.upcoming_repetition(1)
+                      || MoveList<ALL>(rootPos).size() == 0
+                      || (tbConfig.cardinality
+                          && rootPos.count<ALL_PIECES>() <= tbConfig.cardinality);
+                    rootPos.undo_move(rm.pv[0]);
+                    assert(validOneMovePV);
+                }
+            }
+#endif
 
             // Sort the PV lines searched so far and update the GUI
             std::stable_sort(rootMoves.begin() + pvFirst, rootMoves.begin() + pvIdx + 1);
@@ -1413,8 +1435,7 @@ moves_loop:  // When in check, search starts here
                 // Adjust full-depth search based on LMR results - if the result was
                 // good enough search deeper, if it was bad enough search shallower.
                 const bool doDeeperSearch    = d < newDepth && value > bestValue + 53;
-                const bool doShallowerSearch = value < bestValue + 8;
-
+                const bool doShallowerSearch = newDepth > 1 && value < bestValue + 8;
                 newDepth += doDeeperSearch - doShallowerSearch;
 
                 if (newDepth > d)
@@ -1566,7 +1587,7 @@ moves_loop:  // When in check, search starts here
                 }
 
                 // Reduce other moves if we have found at least one score improvement
-                if (depth > 3 && depth < 12 && !is_decisive(value))
+                if (!rootNode && depth > 3 && depth < 12 && !is_decisive(value))
                     depth -= 3;
 
                 assert(depth > 0);
