@@ -508,6 +508,26 @@ bool Search::Worker::iterative_deepening() {
                         rootMoves[i].inexactLower = true;
             }
 
+#ifndef NDEBUG
+            if (!threads.stop && rootDepth >= 2)
+            {
+                const auto& rm = rootMoves[pvIdx];
+                assert(!rm.pv.empty());
+                if (rm.pv.size() == 1)
+                {
+                    StateInfo st;
+                    rootPos.do_move(rm.pv[0], st);
+                    const bool validOneMovePV =
+                      rootPos.is_draw(1) || rootPos.upcoming_repetition(1)
+                      || MoveList<ALL>(rootPos).size() == 0
+                      || (tbConfig.cardinality
+                          && rootPos.count<ALL_PIECES>() <= tbConfig.cardinality);
+                    rootPos.undo_move(rm.pv[0]);
+                    assert(validOneMovePV);
+                }
+            }
+#endif
+
             // Sort the PV lines searched so far and update the GUI
             std::stable_sort(rootMoves.begin() + pvFirst, rootMoves.begin() + pvIdx + 1);
 
@@ -1450,12 +1470,13 @@ moves_loop:  // When in check, search starts here
             (ss + 1)->pv = &pv;
             (ss + 1)->pv->clear();
 
-            // Extend move from transposition table if we are about to dive
-            // into qsearch. Decisive score handling improves mate finding
-            // and retrograde analysis.
-            if (move == ttData.move
-                && ((is_valid(ttData.value) && is_decisive(ttData.value) && ttData.depth > 0)
-                    || ttData.depth > 1))
+            // Extend 1-move PVs and moves from transposition table if we are
+            // about to dive into qsearch. Decisive score handling improves
+            // mate finding and retrograde analysis.
+            if ((rootNode && rootDepth >= 2)
+                || (move == ttData.move
+                    && ((is_valid(ttData.value) && is_decisive(ttData.value) && ttData.depth > 0)
+                        || ttData.depth > 1)))
                 newDepth = std::max(newDepth, 1);
 
             value = -search<PV>(pos, ss + 1, -beta, -alpha, newDepth, false);
