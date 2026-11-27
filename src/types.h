@@ -192,6 +192,14 @@ constexpr Value mate_in(int ply) { return VALUE_MATE - ply; }
 
 constexpr Value mated_in(int ply) { return -VALUE_MATE + ply; }
 
+// Decisive scores are clamped when stored in the transposition table
+constexpr Value VALUE_TT_WIN  = VALUE_TB_WIN_IN_MAX_PLY - 1;
+constexpr Value VALUE_TT_LOSS = -VALUE_TT_WIN;
+constexpr bool is_tt_decisive(Value value) {
+    assert(is_valid(value));
+    return value >= VALUE_TT_WIN || value <= VALUE_TT_LOSS;
+}
+
 // In the code, we make the assumption that these values
 // are such that non_pawn_material() can be used to uniquely
 // identify the material on the board.

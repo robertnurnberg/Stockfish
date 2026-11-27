@@ -59,6 +59,17 @@ static constexpr u8 BOUND_MASK      = 0b11 << BOUND_SHIFT;
 static constexpr u8 PV_SHIFT        = BOUND_SHIFT + 2;
 static constexpr u8 PV_MASK         = 1 << PV_SHIFT;
 
+// Clamps a score into the non-decisive range
+static void clamp_tt_value(Value& v, Bound& b) {
+    if (v == VALUE_NONE)
+        return;
+
+    if (is_win(v))
+        v = VALUE_TT_WIN, b = BOUND_LOWER;
+    else if (is_loss(v))
+        v = VALUE_TT_LOSS, b = BOUND_UPPER;
+}
+
 struct TTEntry {
 
     // Extract data from the TT entry. We have to convert TT internal bitfields
@@ -119,12 +130,17 @@ void TTWriter::write(
     const u64 keyDiff = ((keys >> shift) ^ k) & KeyMask;
     auto&     entry   = cluster->entry[index];
 
+    const bool exact = b == BOUND_EXACT;
+
+    // Never store decisive scores
+    clamp_tt_value(v, b);
+
     // Preserve the old ttmove if we don't have a new one
     if (m || keyDiff)
         entry.move16 = m;
 
     // Overwrite less valuable entries (cheapest checks first)
-    if (b == BOUND_EXACT || keyDiff || d - DEPTH_NONE + 2 * pv > entry.depth8 - 4
+    if (exact || keyDiff || d - DEPTH_NONE + 2 * pv > entry.depth8 - 4
         || entry.relative_age(curr_generation))
     {
         assert(d > DEPTH_NONE);
@@ -147,7 +163,7 @@ void TTWriter::write(
         auto v16 = entry.value16;
 
         // Guard against racy underflows, default to "unoccupied"
-        if (std::abs(v16) < VALUE_INFINITE && is_decisive(v16))
+        if (std::abs(v16) < VALUE_INFINITE && is_tt_decisive(Value(v16)))
             entry.depth8 = std::max(int(entry.depth8) - 1, 0);
     }
 }
